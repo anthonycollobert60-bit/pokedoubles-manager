@@ -602,6 +602,7 @@ function renderCards(collId, collNom, blocId, blocNom){
   cards.forEach(card=>{
     const el=document.createElement('div'); el.className='poke-card'; el.dataset.nom=(card.nom||'').toLowerCase(); el.dataset.id=card.id;
     const img=optImg(card.image);
+    el.dataset.num=(card.numero||'').toLowerCase();
     el.innerHTML=`<img src="${esc(img)}" alt="${esc(card.nom)}" loading="lazy">
       <div class="poke-card-name">${esc(card.nom)}</div>
       <div class="poke-card-num">${esc(card.numero||'')}</div>
@@ -1128,11 +1129,20 @@ function syncCollId(inputId, hiddenId){
 }
 
 function syncCarteId(inputId, hiddenId){
-  const val=document.getElementById(inputId)?.value||'';
+  const val=(document.getElementById(inputId)?.value||'').toLowerCase().trim();
   const collId=document.getElementById('delCollForCarteId')?.value||'';
   const collCartes=cartes.filter(c=>c.collection_id===collId);
-  const c=collCartes.find(x=>x.nom===val||`${x.nom} (${x.numero})`===val);
+  // Chercher par correspondance exacte nom+num, ou partielle
+  const c=collCartes.find(x=>{
+    const full=`${x.nom} (${x.numero})`.toLowerCase();
+    return full===val || x.nom.toLowerCase()===val || (x.numero||'').toLowerCase()===val;
+  });
   const h=document.getElementById(hiddenId); if(h) h.value=c?c.id:'';
+}
+
+function loadCartesForDelSearch(){
+  // Appelé aussi quand on tape dans le champ carte
+  syncCarteId('delCarteInput','delCarteId');
 }
 
 function loadCartesForDel(){
@@ -1142,7 +1152,7 @@ function loadCartesForDel(){
   if(!dl||!row) return;
   if(!collId){ row.style.display='none'; dl.innerHTML=''; return; }
   const collCartes=cartes.filter(c=>c.collection_id===collId);
-  dl.innerHTML=collCartes.map(c=>`<option value="${esc(c.nom)} (${esc(c.numero)})" data-id="${c.id}">`).join('');
+  dl.innerHTML=collCartes.map(c=>`<option value="${esc(c.nom)} (${esc(c.numero||'')})" data-id="${c.id}">`).join('');
   row.style.display='flex';
 }
 
