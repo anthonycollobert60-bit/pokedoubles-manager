@@ -638,7 +638,11 @@ function applyFilters(){
   document.querySelectorAll('.poke-card').forEach(el=>{
     const carteId=el.dataset.id;
     let visible=true;
-    if(q && !(el.dataset.nom||'').includes(q)) visible=false;
+    if(q){
+      const matchNom=(el.dataset.nom||'').includes(q);
+      const matchNum=(el.dataset.num||'').includes(q);
+      if(!matchNom && !matchNum) visible=false;
+    }
     if(type!=='all'){
       const has=owners.some(o=>getQuantite(carteId,o,type)>0);
       if(!has) visible=false;
