@@ -1182,7 +1182,10 @@ async function addCollection(){
   const hasM=document.getElementById('newCollM')?.checked||false;
   if(!blocId||!nom){ showToast('Remplis tous les champs'); return; }
   try {
-    const res=await sbPost('collections',{bloc_id:blocId,nom,has_pokeball:hasP,has_masterball:hasM});
+    // Ordre = max des collections du même bloc + 1 (nouvelle collection en dernier)
+    const blocColls=collections.filter(c=>c.bloc_id===blocId);
+    const maxOrdre=blocColls.length>0?Math.max(...blocColls.map(c=>c.ordre??0)):0;
+    const res=await sbPost('collections',{bloc_id:blocId,nom,has_pokeball:hasP,has_masterball:hasM,ordre:maxOrdre+1});
     collections=[...collections,...res];
     document.getElementById('newCollNom').value='';
     document.getElementById('newCollP').checked=false;
