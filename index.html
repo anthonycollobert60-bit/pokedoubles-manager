@@ -166,6 +166,10 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--text);heig
 .form-input{flex:1;min-width:140px;padding:9px 12px;border-radius:var(--r);border:1px solid var(--border);background:var(--bg);color:var(--text);font-family:'Nunito',sans-serif;font-size:14px;outline:none;transition:border-color var(--t)}
 .form-input:focus{border-color:var(--accent)}
 .form-select{padding:9px 12px;border-radius:var(--r);border:1px solid var(--border);background:var(--bg);color:var(--text);font-family:'Nunito',sans-serif;font-size:14px;outline:none;flex:1}
+.select-wrap{display:flex;flex-direction:column;gap:4px;flex:1}
+.select-filter{padding:7px 10px;border-radius:var(--r);border:1px solid var(--border);background:var(--bg);color:var(--text);font-family:'Nunito',sans-serif;font-size:13px;outline:none;transition:border-color var(--t)}
+.select-filter:focus{border-color:var(--accent)}
+.select-filter::placeholder{color:var(--text2)}
 .btn-sm{padding:9px 16px;border-radius:var(--r);border:none;background:var(--accent);color:#fff;font-family:'Nunito',sans-serif;font-size:13px;font-weight:700;cursor:pointer;transition:all var(--t);white-space:nowrap}
 .btn-sm:hover{opacity:0.85}
 .btn-sm.danger{background:#ef4444}
@@ -847,6 +851,21 @@ function renderQtyRow(row, carteId, joueur, rarete){
   }
 }
 
+// Filtre les options d'un select natif selon un champ texte
+function filterNativeSelect(filterId, selectId){
+  const q=(document.getElementById(filterId)?.value||'').toLowerCase();
+  const sel=document.getElementById(selectId);
+  if(!sel) return;
+  Array.from(sel.options).forEach(opt=>{
+    if(!opt.value){ opt.style.display=''; return; } // garder l'option vide
+    opt.style.display=opt.text.toLowerCase().includes(q)?'':'none';
+  });
+  // Auto-sélectionner si un seul résultat
+  const visible=Array.from(sel.options).filter(o=>o.value&&o.style.display!=='none');
+  if(visible.length===1){ sel.value=visible[0].value; sel.dispatchEvent(new Event('change')); }
+  else if(q==='') sel.value='';
+}
+
 function closeModal(){
   document.getElementById('modal').style.display='none';
   document.getElementById('overlay').style.display='none';
@@ -894,6 +913,17 @@ function renderAdmin(){
   if(!currentUser){ document.getElementById('adminBody').innerHTML='<div class="empty-state"><h3>Accès refusé</h3></div>'; return; }
   const body=document.getElementById('adminBody');
   const blocOpts = blocs.map(b=>`<option value="${b.id}">${esc(b.nom)}</option>`).join('');
+
+  // Crée un wrapper filtre + select natif
+  function wrapSelect(selectId, opts, placeholder){
+    const filterId = selectId+'-filter';
+    return `<div class="select-wrap">
+      <input class="select-filter" id="${filterId}" placeholder="🔍 Rechercher..." oninput="filterNativeSelect('${filterId}','${selectId}')">
+      <select class="form-select" id="${selectId}">
+        <option value="">${placeholder}</option>${opts}
+      </select>
+    </div>`;
+  }
   const collOpts = collections.map(c=>{ const b=blocs.find(x=>x.id===c.bloc_id); return `<option value="${c.id}">${b?esc(b.nom)+' › ':''}${esc(c.nom)}</option>`; }).join('');
 
   body.innerHTML=`
@@ -910,7 +940,7 @@ function renderAdmin(){
   <div class="admin-section">
     <h3>➕ Nouvelle collection</h3>
     <div class="form-row">
-      <select class="form-select" id="newCollBlocId"><option value="">-- Choisir un bloc --</option>${blocOpts}</select>
+      ${wrapSelect("newCollBlocId", blocOpts, "-- Choisir un bloc --")}
     </div>
     <div class="form-row">
       <input class="form-input" id="newCollNom" placeholder="Nom de la collection"/>
@@ -932,7 +962,7 @@ function renderAdmin(){
   <div class="admin-section">
     <h3>🔍 Importer des cartes via TCGdex</h3>
     <div class="form-row">
-      <select class="form-select" id="importCollId"><option value="">-- Choisir une collection --</option>${collOpts}</select>
+      ${wrapSelect("importCollId", collOpts, "-- Choisir une collection --")}
     </div>
     <div class="form-row">
       <input class="form-input" id="tcgdexQuery" placeholder="Nom ou code français (ex: ev01, Fable Nébuleuse)"/>
@@ -949,7 +979,7 @@ function renderAdmin(){
   <div class="admin-section">
     <h3>✏️ Ajouter une carte manuellement</h3>
     <div class="form-row">
-      <select class="form-select" id="manualCollId"><option value="">-- Choisir une collection --</option>${collOpts}</select>
+      ${wrapSelect("manualCollId", collOpts, "-- Choisir une collection --")}
     </div>
     <div class="form-row">
       <input class="form-input" id="manualNom" placeholder="Nom de la carte"/>
@@ -965,23 +995,27 @@ function renderAdmin(){
   <div class="admin-section">
     <h3>🗑️ Supprimer des éléments</h3>
     <div class="form-row" style="gap:6px;">
-      <select class="form-select" id="delBlocId"><option value="">-- Supprimer un bloc --</option>${blocOpts}</select>
+      ${wrapSelect("delBlocId", blocOpts, "-- Supprimer un bloc --")}
       <button class="btn-sm danger" onclick="deleteBloc()">Supprimer</button>
     </div>
     <div class="form-row" style="gap:6px;">
-      <select class="form-select" id="delCollId"><option value="">-- Supprimer une collection --</option>${collOpts}</select>
+      ${wrapSelect("delCollId", collOpts, "-- Supprimer une collection --")}
       <button class="btn-sm danger" onclick="deleteCollection()">Supprimer</button>
     </div>
     <div class="form-row">
-      <select class="form-select" id="delCollForCarteId" onchange="loadCartesForDel()">
-        <option value="">-- Collection de la carte --</option>${collOpts}
-      </select>
+      ${(()=>{ const s=wrapSelect("delCollForCarteId", collOpts, "-- Collection de la carte --"); return s.replace("<select ", "<select onchange=\"loadCartesForDel()\" "); })()}
     </div>
     <div class="form-row" style="gap:6px;display:none;" id="delCarteRow">
       <select class="form-select" id="delCarteId"><option value="">-- Choisir une carte --</option></select>
       <button class="btn-sm danger" onclick="deleteCarte()">Supprimer</button>
     </div>
   </div>`;
+}
+
+// Après renderAdmin, attacher l'event onchange pour charger les cartes
+function attachAdminEvents(){
+  const delCollSel=document.getElementById('delCollForCarteId');
+  if(delCollSel) delCollSel.addEventListener('change', loadCartesForDel);
 }
 
 let tcgdexCards = [];
