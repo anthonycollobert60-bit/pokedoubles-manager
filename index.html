@@ -510,7 +510,7 @@ async function fetchPrice(tcgdexId){
   if(!tcgdexId) return null;
   if(tcgdexId in priceCache) return priceCache[tcgdexId];
   try{
-    const r=await fetch(`https://api.tcgdex.net/v2/fr/cards/${tcgdexId}`);
+    const r=await fetch(`https://api.tcgdex.net/v2/en/cards/${tcgdexId}`);
     if(!r.ok){ priceCache[tcgdexId]=null; return null; }
     const d=await r.json();
     const cm=d.pricing?.cardmarket;
