@@ -194,6 +194,11 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--text);heig
 .section-divider{border:none;border-top:1px solid var(--border);margin:20px 0}
 .doubles-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:10px;margin-top:10px}
 
+/* ── PRIX ───────────────────────────────────────────────────── */
+.price-badge{display:inline-flex;align-items:center;padding:2px 7px;border-radius:100px;background:rgba(16,185,129,0.12);border:1px solid rgba(16,185,129,0.25);color:#10b981;font-size:10px;font-weight:800;font-family:'Space Mono',monospace}
+.modal-price{display:flex;justify-content:center;margin:8px 0 12px;min-height:22px}
+.modal-price.na{display:none}
+
 /* ── TOAST ──────────────────────────────────────────── */
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:10px 18px;font-size:14px;font-weight:700;box-shadow:0 8px 24px var(--shadow);transition:transform 0.3s ease;z-index:9999;white-space:nowrap}
 .toast.show{transform:translateX(-50%) translateY(0)}
@@ -317,6 +322,7 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--text);heig
     <button class="modal-close" onclick="closeModal()">×</button>
   </div>
   <img id="modalImg" src="" alt="carte">
+  <div id="modalPrice" class="modal-price na"></div>
   <div id="modalOwnersArea"></div>
 </div>
 
@@ -415,6 +421,115 @@ function computeOrder(collId, numero){
 }
 
 function esc(s){ return (s||'').toString().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// Cache prix
+const priceCache={};
+let usdToEur=null;
+
+// Récupère le taux USD→EUR (mis en cache 24h via localStorage)
+async function getUsdEurRate(){
+  if(usdToEur) return usdToEur;
+  try{
+    const saved=localStorage.getItem('usd_eur_rate');
+    const savedTs=parseInt(localStorage.getItem('usd_eur_ts')||'0');
+    if(saved && Date.now()-savedTs < 86400000){ // 24h
+      usdToEur=parseFloat(saved); return usdToEur;
+    }
+    const r=await fetch('https://api.frankfurter.app/latest?from=USD&to=EUR');
+    if(!r.ok) throw new Error('API change error');
+    const d=await r.json();
+    usdToEur=d.rates.EUR;
+    localStorage.setItem('usd_eur_rate', usdToEur);
+    localStorage.setItem('usd_eur_ts', Date.now());
+    return usdToEur;
+  }catch(e){ usdToEur=0.92; return usdToEur; } // fallback
+}
+
+// Mapping nom collection → ID set Pokemon TCG API
+const PTCG_SET_MAP={
+  // Épée et Bouclier
+  'Épée et Bouclier':'swsh1','Clash des Rebelles':'swsh2','Ténèbres Embrasées':'swsh3',
+  'La Voie du Maître':'swsh3pt5','Voltage Éclatant':'swsh4','Déstinées Radieuses':'swsh4pt5',
+  'Styles de Combat':'swsh5','Règne de Glace':'swsh6','Évolution Céleste':'swsh7',
+  'Célébrations':'cel25','Poing de Fusion':'swsh8','Stars Étincelantes':'swsh9',
+  'Astres Radieux':'swsh10','Pokémon GO':'swsh10pt5','Originie Perdue':'swsh11',
+  'Tempête Argentée':'swsh12','Zénith Suprême':'swsh12pt5',
+  // Écarlate et Violet
+  'Évolution à Paldea':'sv1','Paldéa en Éveil':'sv2','Flammes Obscidiennes':'sv3',
+  'Déstinées à Paldea':'sv4pt5','Forces Temporelles':'sv5',
+  'Mascarade Crépusculaire':'sv6','Fable Nébuleuse':'sv6pt5',
+  'Couronnes Royales':'sv7',
+  // Méga Évolution (sets japonais/internationaux)
+  'Méga Évolution':'me01',
+  'Flammes Fantasmagoriques':'me02',
+  'Héros Transcendants':'me03',
+  'Équilibre Parfait':'me04',  // Perfect Order
+  'Chaos Ascendant':'me05',
+};
+
+// Cherche une carte sur Pokemon TCG API par set+numéro et retourne son prix en €
+async function fetchPriceTCGPlayer(carte){
+  const cacheKey='ptcg_'+carte.id;
+  if(cacheKey in priceCache) return priceCache[cacheKey];
+  try{
+    // Trouver le set ID depuis la collection
+    const coll=collections.find(c=>c.id===carte.collection_id);
+    const setId=coll?PTCG_SET_MAP[coll.nom]:null;
+    if(!setId){ priceCache[cacheKey]=null; return null; }
+
+    // Chercher par set + numéro exact
+    const num=(carte.numero||'').split('/')[0]; // "042/198" → "042"
+    const query=encodeURIComponent(`set.id:${setId} number:${num}`);
+    const r=await fetch(`https://api.pokemontcg.io/v2/cards?q=${query}&select=tcgplayer,number&pageSize=5`);
+    if(!r.ok){ priceCache[cacheKey]=null; return null; }
+    const d=await r.json();
+    if(!d.data?.length){ priceCache[cacheKey]=null; return null; }
+
+    // Prendre la carte dont le numéro correspond exactement
+    const numClean=num.replace(/^0+/,'');
+    const match=d.data.find(c=>String(c.number).replace(/^0+/,'')=== numClean)||d.data[0];
+
+    // Prendre le prix le plus pertinent selon la rareté
+    const prices=match?.tcgplayer?.prices||{};
+    const priceUsd=prices.normal?.market
+      ?? prices.reverseHolofoil?.market
+      ?? prices.holofoil?.market
+      ?? prices.ultraRare?.market
+      ?? prices['1stEditionNormal']?.market
+      ?? null;
+
+    if(priceUsd==null){ priceCache[cacheKey]=null; return null; }
+    const rate=await getUsdEurRate();
+    const priceEur=parseFloat((priceUsd*rate).toFixed(2));
+    priceCache[cacheKey]=priceEur;
+    return priceEur;
+  }catch(e){ priceCache[cacheKey]=null; return null; }
+}
+
+async function fetchPrice(tcgdexId){
+  if(!tcgdexId) return null;
+  if(tcgdexId in priceCache) return priceCache[tcgdexId];
+  try{
+    const r=await fetch(`https://api.tcgdex.net/v2/fr/cards/${tcgdexId}`);
+    if(!r.ok){ priceCache[tcgdexId]=null; return null; }
+    const d=await r.json();
+    const cm=d.pricing?.cardmarket;
+    const price = cm?.trend
+      ?? cm?.avg
+      ?? cm?.avg7
+      ?? cm?.avg30
+      ?? cm?.low
+      ?? null;
+    priceCache[tcgdexId]=price;
+    return price;
+  }catch(e){ priceCache[tcgdexId]=null; return null; }
+}
+
+// Récupère le prix d'une carte via TCGdex/CardMarket uniquement
+async function getPriceForCard(card){
+  if(card.tcgdex_id) return fetchPrice(card.tcgdex_id);
+  return null; // Pas de prix pour les cartes sans tcgdex_id (Méga Évolution etc.)
+}
 
 function optImg(url){ if(!url) return 'https://via.placeholder.com/240x336?text=?'; return url.replace(/-2x\.(png|jpg|jpeg|webp)/gi,'.$1'); }
 function showToast(msg,dur=2800){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),dur); }
@@ -611,7 +726,12 @@ function renderCards(collId, collNom, blocId, blocNom){
     el.innerHTML=`<img src="${esc(img)}" alt="${esc(card.nom)}" loading="lazy">
       <div class="poke-card-name">${esc(card.nom)}</div>
       <div class="poke-card-num">${esc(card.numero||'')}</div>
-      <div class="badges-row"></div>`;
+      <div class="badges-row"></div>
+      <div id="price-${card.id}"></div>`;
+    getPriceForCard(card).then(p=>{
+      const el2=document.getElementById('price-'+card.id);
+      if(el2&&p!=null) el2.innerHTML=`<div class="price-badge">${p.toFixed(2)} €</div>`;
+    });
     buildBadges(el.querySelector('.badges-row'), card.id, viewOwner);
     el.onclick=()=>openModal(card.id);
     grid.appendChild(el);
@@ -669,6 +789,14 @@ function openModal(carteId){
   document.getElementById('modalSub').textContent=card.numero||'';
   document.getElementById('modalImg').src=optImg(card.image);
   renderModalQty(carteId);
+
+  // Prix CardMarket
+  const priceEl=document.getElementById('modalPrice');
+  priceEl.className='modal-price na';
+  getPriceForCard(card).then(p=>{
+    if(p!=null){ priceEl.className='modal-price'; priceEl.innerHTML=`<div class="price-badge" style="font-size:13px;padding:4px 12px;">${p.toFixed(2)} €</div>`; }
+    else { priceEl.className='modal-price na'; }
+  });
 
   document.getElementById('modal').style.display='block';
   document.getElementById('overlay').style.display='block';
@@ -1064,7 +1192,7 @@ async function loadTcgdexSet(setId, setName) {
     tcgdexCards=(setData.cards||[]).map(c=>{
       const serieId=setData.serie?.id||'';
       const imgBase=`https://assets.tcgdex.net/fr/${serieId}/${setId2}/${c.localId}`;
-      return { id:c.localId, nom:c.name||c.localId, numero:c.localId, image:imgBase+'/low.webp', imageHigh:imgBase+'/high.webp' };
+      return { id:c.localId, nom:c.name||c.localId, numero:c.localId, image:imgBase+'/low.webp', imageHigh:imgBase+'/high.webp', tcgdexId:`${setId2}-${c.localId}` };
     });
     selectedTcgdex=new Set();
     res.innerHTML=`<div style="font-size:13px;font-weight:700;margin:8px 0;color:var(--text2);">${displayName} (${setId2}) — ${tcgdexCards.length} cartes. Clique pour sélectionner :</div>`;
@@ -1113,7 +1241,7 @@ async function importSelected(){
     const startOrdre=existingInColl.length>0
       ? Math.max(...existingInColl.map(c=>c.ordre??0))+1
       : 0;
-    const batch=sorted.map((c,i)=>({collection_id:collId,nom:c.nom,numero:c.numero,image:c.imageHigh,ordre:startOrdre+i}));
+    const batch=sorted.map((c,i)=>({collection_id:collId,nom:c.nom,numero:c.numero,image:c.imageHigh,ordre:startOrdre+i,tcgdex_id:c.tcgdexId||null}));
     const inserted=await sbPost('cartes',batch);
     cartes=[...cartes,...inserted].sort((a,b)=>(a.ordre??9999)-(b.ordre??9999));
     showToast(`✅ ${inserted.length} cartes importées !`);
