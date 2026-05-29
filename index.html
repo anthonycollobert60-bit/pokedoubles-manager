@@ -994,6 +994,19 @@ function filterNativeSelect(filterId, selectId){
   else if(q==='') sel.value='';
 }
 
+// Vide le champ de recherche et réaffiche toutes les options
+function clearFilter(filterId, selectId){
+  const filter=document.getElementById(filterId);
+  const sel=document.getElementById(selectId);
+  if(filter) filter.value='';
+  if(sel){
+    Array.from(sel.options).forEach(opt=>{ opt.style.display=''; });
+    sel.value='';
+    sel.dispatchEvent(new Event('change'));
+  }
+  if(filter) filter.focus();
+}
+
 function closeModal(){
   document.getElementById('modal').style.display='none';
   document.getElementById('overlay').style.display='none';
@@ -1042,11 +1055,14 @@ function renderAdmin(){
   const body=document.getElementById('adminBody');
   const blocOpts = blocs.map(b=>`<option value="${b.id}">${esc(b.nom)}</option>`).join('');
 
-  // Crée un wrapper filtre + select natif
+  // Crée un wrapper filtre + select natif avec bouton croix
   function wrapSelect(selectId, opts, placeholder){
     const filterId = selectId+'-filter';
     return `<div class="select-wrap">
-      <input class="select-filter" id="${filterId}" placeholder="🔍 Rechercher..." oninput="filterNativeSelect('${filterId}','${selectId}')">
+      <div style="position:relative;">
+        <input class="select-filter" id="${filterId}" placeholder="🔍 Rechercher..." style="width:100%;padding-right:32px;" oninput="filterNativeSelect('${filterId}','${selectId}')">
+        <button type="button" onclick="clearFilter('${filterId}','${selectId}')" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);width:22px;height:22px;border-radius:50%;border:none;background:var(--surface2);color:var(--text2);cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;line-height:1;">×</button>
+      </div>
       <select class="form-select" id="${selectId}">
         <option value="">${placeholder}</option>${opts}
       </select>
