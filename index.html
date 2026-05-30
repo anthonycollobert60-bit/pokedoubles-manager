@@ -600,6 +600,8 @@ function enterApp(){
 }
 
 /* ══ TABS ══════════════════════════════════════════════ */
+let stockDirty=true, adminDirty=true;
+
 function switchTab(tab){
   activeTab=tab;
   document.querySelectorAll('.nav-tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===tab));
@@ -607,8 +609,8 @@ function switchTab(tab){
   document.getElementById('stockBody').style.display = tab==='stock'      ? '' : 'none';
   document.getElementById('adminBody').style.display = tab==='admin'      ? '' : 'none';
   document.getElementById('subheader').style.display = tab==='collection' ? '' : 'none';
-  if(tab==='stock') renderStock();
-  if(tab==='admin') renderAdmin();
+  if(tab==='stock' && stockDirty){ renderStock(); stockDirty=false; }
+  if(tab==='admin' && adminDirty){ renderAdmin(); adminDirty=false; }
 }
 
 /* ══ DATA LOADING ══════════════════════════════════════ */
@@ -687,7 +689,7 @@ function countOwnedInBloc(blocId, viewOwner){
   return cols.reduce((s,col)=>s+countOwnedInCollection(col.id,viewOwner),0);
 }
 
-function scrollTop(){ const b=document.getElementById('appBody'); if(b) b.scrollTop=0; window.scrollTo(0,0); }
+function scrollTop(){ const b=document.getElementById('appBody'); if(b) b.scrollTop=0; }
 
 function renderBlocs(){
   currentBlocId=null; currentCollId=null; currentCardId=null;
@@ -964,6 +966,7 @@ async function changeQty(carteId, joueur, rarete, delta){
   // Màj affichage
   const el=document.getElementById(`qv-${carteId}-${joueur}-${rarete}`);
   if(el) el.textContent=next;
+  stockDirty=true; // quantités modifiées, stock doit se rafraîchir
   // Màj badges dans la grille
   const cardEl=document.querySelector(`.poke-card[data-id="${carteId}"]`);
   if(cardEl) buildBadges(cardEl.querySelector('.badges-row'), carteId, currentUser);
@@ -1375,7 +1378,7 @@ async function addCollection(){
     document.getElementById('newCollP').checked=false;
     document.getElementById('newCollM').checked=false;
     showToast('✅ Collection créée');
-    renderAdmin();
+    adminDirty=true; renderAdmin();
   } catch(e) { showToast('❌ '+e.message); }
 }
 
