@@ -1745,18 +1745,39 @@ async function startScanCam(){
     p,
     new Promise((_,rej)=>setTimeout(()=>rej(new Error('TIMEOUT')),ms))
   ]);
+  // Contraintes haute résolution + mise au point continue (meilleure netteté pour l'OCR)
+  const hiRes={
+    facingMode:{ideal:'environment'},
+    width:{ideal:3840}, height:{ideal:2160},   // vise la 4K, le navigateur ajuste au mieux
+    focusMode:{ideal:'continuous'},
+    advanced:[{focusMode:'continuous'}]
+  };
   try{
-    // 1er essai : caméra arrière (avec garde-fou de 8s)
+    // 1er essai : caméra arrière haute résolution
     try{
-      scanStream=await withTimeout(navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}},audio:false}),20000);
+      scanStream=await withTimeout(navigator.mediaDevices.getUserMedia({video:hiRes,audio:false}),20000);
     }catch(eEnv){
       if(eEnv && eEnv.message==='TIMEOUT') throw eEnv;
-      // repli : n'importe quelle caméra
-      scanStream=await withTimeout(navigator.mediaDevices.getUserMedia({video:true,audio:false}),20000);
+      // 2e essai : caméra arrière sans contrainte de résolution
+      try{
+        scanStream=await withTimeout(navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}},audio:false}),20000);
+      }catch(eEnv2){
+        if(eEnv2 && eEnv2.message==='TIMEOUT') throw eEnv2;
+        // repli : n'importe quelle caméra
+        scanStream=await withTimeout(navigator.mediaDevices.getUserMedia({video:true,audio:false}),20000);
+      }
     }
     v.setAttribute('playsinline','');
     v.muted=true;
     v.srcObject=scanStream;
+    // Forcer la mise au point continue si la caméra le permet
+    try{
+      const track=scanStream.getVideoTracks()[0];
+      const caps=track.getCapabilities ? track.getCapabilities() : {};
+      const adv=[];
+      if(caps.focusMode && caps.focusMode.includes('continuous')) adv.push({focusMode:'continuous'});
+      if(adv.length) await track.applyConstraints({advanced:adv});
+    }catch(eFocus){ /* non supporté, on ignore */ }
     // Attendre que la vidéo soit prête puis lancer la lecture
     await new Promise(res=>{
       if(v.readyState>=1) return res();
@@ -1799,13 +1820,43 @@ async function captureScan(){
   const v=document.getElementById('scanVideo');
   if(!v || !v.videoWidth){ showToast('Caméra pas prête'); return; }
   document.getElementById('scanShutter').disabled=true;
+  setScanStatus('📸 Mise au point…');
+  // Laisser 400ms à l'autofocus pour se stabiliser avant la capture
+  await new Promise(r=>setTimeout(r,400));
   setScanStatus('🔍 Lecture de la carte…');
-  const canvas=document.getElementById('scanCanvas');
+
   const vw=v.videoWidth, vh=v.videoHeight;
-  canvas.width=vw; canvas.height=vh;
-  canvas.getContext('2d').drawImage(v,0,0,vw,vh);
+  // Recadrer sur la zone du cadre (72% largeur, ratio carte) → le numéro est plus gros
+  const frameW=vw*0.74, frameH=Math.min(vh*0.92, frameW*88/63);
+  const sx=(vw-frameW)/2, sy=(vh-frameH)/2;
+  // Agrandir ×2 pour donner plus de pixels à l'OCR
+  const scale=2;
+  const canvas=document.getElementById('scanCanvas');
+  canvas.width=Math.round(frameW*scale);
+  canvas.height=Math.round(frameH*scale);
+  const ctx=canvas.getContext('2d');
+  ctx.imageSmoothingEnabled=true; ctx.imageSmoothingQuality='high';
+  ctx.drawImage(v, sx, sy, frameW, frameH, 0, 0, canvas.width, canvas.height);
+
+  // Pré-traitement : niveaux de gris + contraste renforcé (aide beaucoup l'OCR)
   try{
-    const { data }=await Tesseract.recognize(canvas,'eng');
+    const img=ctx.getImageData(0,0,canvas.width,canvas.height);
+    const d=img.data;
+    const contrast=1.4, intercept=128*(1-contrast);
+    for(let i=0;i<d.length;i+=4){
+      let g=0.299*d[i]+0.587*d[i+1]+0.114*d[i+2];
+      g=g*contrast+intercept;
+      g=g<0?0:g>255?255:g;
+      d[i]=d[i+1]=d[i+2]=g;
+    }
+    ctx.putImageData(img,0,0);
+  }catch(ePre){ /* si getImageData échoue (rare), on garde l'image brute */ }
+
+  try{
+    // Restreindre l'OCR aux caractères utiles pour le numéro (chiffres, /, lettres)
+    const { data }=await Tesseract.recognize(canvas,'eng',{
+      tessedit_char_whitelist:'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789/ '
+    });
     handleScanText(data.text||'');
   }catch(e){
     setScanStatus('❌ Lecture impossible, réessaie');
