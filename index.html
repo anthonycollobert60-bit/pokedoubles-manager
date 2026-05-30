@@ -668,9 +668,21 @@ async function loadData(){
 }
 
 /* ══ COLLECTION VIEWS ══════════════════════════════════ */
+// Index des quantités pour O(1) au lieu de O(n)
+let quantitesIndex = {};
+function buildQuantitesIndex(){
+  quantitesIndex = {};
+  quantites.forEach(q=>{
+    quantitesIndex[q.carte_id+'|'+q.joueur+'|'+q.rarete] = q.quantite;
+  });
+}
 function getQuantite(carteId, joueur, rarete){
-  const q=quantites.find(x=>x.carte_id===carteId && x.joueur===joueur && x.rarete===rarete);
-  return q ? q.quantite : 0;
+  return quantitesIndex[carteId+'|'+joueur+'|'+rarete] || 0;
+}
+function updateQuantiteIndex(carteId, joueur, rarete, val){
+  const key = carteId+'|'+joueur+'|'+rarete;
+  if(val > 0) quantitesIndex[key] = val;
+  else delete quantitesIndex[key];
 }
 
 function getTotalOwned(carteId, viewOwner){
@@ -693,6 +705,7 @@ function scrollTop(){ const b=document.getElementById('appBody'); if(b) b.scroll
 
 function renderBlocs(){
   currentBlocId=null; currentCollId=null; currentCardId=null;
+  buildQuantitesIndex(); // reconstruire l'index si quantités fraîches
   resetFilters();
   scrollTop();
   document.getElementById('breadcrumbArea').innerHTML='';
@@ -753,44 +766,57 @@ function renderCards(collId, collNom, blocId, blocNom){
       <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>Retour
     </button>`;
   const body=document.getElementById('appBody');
-  body.innerHTML=`<div class="section-title">🃏 ${esc(collNom)}</div>`;
-  const grid=document.createElement('div'); grid.className='cards-grid'; grid.id='cardsGrid';
-  // Cartes déjà dans l'ordre (champ ordre en BDD)
   const cards=cartes.filter(c=>c.collection_id===collId);
   const viewOwner=currentUser||null;
-  cards.forEach(card=>{
-    const el=document.createElement('div'); el.className='poke-card'; el.dataset.nom=(card.nom||'').toLowerCase(); el.dataset.id=card.id;
+  const owners=viewOwner?[viewOwner]:OWNERS;
+
+  // Construire tout le HTML en une seule chaîne (beaucoup plus rapide)
+  const cardsHtml=cards.map(card=>{
     const img=optImg(card.image);
-    el.dataset.num=(card.numero||'').toLowerCase();
-    el.innerHTML=`<img src="${esc(img)}" alt="${esc(card.nom)}" loading="lazy">
+    const badgesHtml=TYPES.map(t=>{
+      const total=owners.reduce((s,o)=>s+getQuantite(card.id,o,t),0);
+      return total>0?`<div class="badge badge-${t}">${t.toUpperCase()} ${total}</div>`:'';
+    }).join('');
+    return `<div class="poke-card" data-id="${card.id}" data-nom="${(card.nom||'').toLowerCase()}" data-num="${(card.numero||'').toLowerCase()}">
+      <img src="${esc(img)}" alt="${esc(card.nom)}" loading="lazy">
       <div class="poke-card-name">${esc(card.nom)}</div>
       <div class="poke-card-num">${esc(card.numero||'')}</div>
-      <div class="badges-row"></div>
-      <div id="price-${card.id}"></div>`;
-    getPriceForCard(card).then(p=>{
-      const el2=document.getElementById('price-'+card.id);
-      if(el2&&p!=null) el2.innerHTML=`<div class="price-badge">${p.toFixed(2)} €</div>`;
-    });
-    buildBadges(el.querySelector('.badges-row'), card.id, viewOwner);
-    el.onclick=()=>openModal(card.id);
-    grid.appendChild(el);
+      <div class="badges-row">${badgesHtml}</div>
+      <div class="price-slot" data-card-id="${card.id}"></div>
+    </div>`;
+  }).join('');
+
+  body.innerHTML=`<div class="section-title">🃏 ${esc(collNom)}</div>
+    <div class="cards-grid" id="cardsGrid">${cardsHtml}</div>`;
+
+  // Attacher les events onclick (ne peut pas être inline avec innerHTML)
+  body.querySelectorAll('.poke-card').forEach(el=>{
+    el.onclick=()=>openModal(el.dataset.id);
   });
-  body.appendChild(grid);
-  applyFilters();
+
+  // Charger les prix en arrière-plan par petits groupes (throttle)
+  let priceIdx=0;
+  function loadNextPrices(){
+    const batch=cards.slice(priceIdx, priceIdx+10);
+    if(batch.length===0) return;
+    priceIdx+=10;
+    batch.forEach(card=>{
+      getPriceForCard(card).then(p=>{
+        const slot=body.querySelector(`.price-slot[data-card-id="${card.id}"]`);
+        if(slot&&p!=null) slot.innerHTML=`<div class="price-badge">${p.toFixed(2)} €</div>`;
+      });
+    });
+    if(priceIdx<cards.length) setTimeout(loadNextPrices, 200);
+  }
+  setTimeout(loadNextPrices, 100);
 }
 
 function buildBadges(container, carteId, viewOwner){
-  container.innerHTML='';
   const owners=viewOwner?[viewOwner]:OWNERS;
-  TYPES.forEach(t=>{
+  container.innerHTML=TYPES.map(t=>{
     const total=owners.reduce((s,o)=>s+getQuantite(carteId,o,t),0);
-    if(total>0){
-      const b=document.createElement('div');
-      b.className='badge badge-'+t;
-      b.textContent=`${t.toUpperCase()} ${total}`;
-      container.appendChild(b);
-    }
-  });
+    return total>0 ? `<div class="badge badge-${t}">${t.toUpperCase()} ${total}</div>` : '';
+  }).join('');
 }
 
 function applyFilters(){
@@ -812,7 +838,6 @@ function applyFilters(){
       if(!has) visible=false;
     }
     el.style.display=visible?'':'none';
-    buildBadges(el.querySelector('.badges-row'), carteId, viewOwner);
   });
 }
 
