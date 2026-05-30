@@ -195,6 +195,36 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--text);heig
 .doubles-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:10px;margin-top:10px}
 
 /* ── PRIX ───────────────────────────────────────────────────── */
+.gs-overlay{display:none;position:fixed;inset:0;background:var(--bg);z-index:300;flex-direction:column;}
+.gs-overlay.open{display:flex;}
+.gs-header{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--border);background:var(--surface);}
+.gs-input{flex:1;padding:10px 14px;border-radius:10px;border:1.5px solid var(--border);background:var(--bg);color:var(--text);font-family:inherit;font-size:15px;outline:none;}
+.gs-input:focus{border-color:var(--accent);}
+.gs-close{background:none;border:none;color:var(--text2);cursor:pointer;padding:6px;border-radius:8px;display:flex;align-items:center;}
+.gs-close:hover{background:var(--surface2);}
+.gs-results{flex:1;overflow-y:auto;padding:8px 12px;}
+.gs-item{display:flex;align-items:center;gap:10px;padding:10px;border-radius:10px;border:1px solid var(--border);background:var(--surface);margin-bottom:6px;cursor:pointer;transition:all var(--t);}
+.gs-item:hover{border-color:var(--accent);background:var(--surface2);}
+.gs-item img{width:44px;height:62px;object-fit:contain;border-radius:4px;background:var(--surface2);}
+.gs-item-info{flex:1;min-width:0;}
+.gs-item-name{font-size:13px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.gs-item-meta{font-size:11px;color:var(--text2);font-weight:600;margin-top:2px;}
+.gs-item-price{font-size:12px;font-weight:800;color:#10b981;font-family:'Space Mono',monospace;white-space:nowrap;}
+.gs-empty{text-align:center;color:var(--text2);padding:40px 20px;font-size:14px;}
+/* ── VALEUR / ESTIMATION ──────────────────────────────────────── */
+.user-value{display:flex;align-items:center;justify-content:space-between;margin-top:14px;padding:12px 14px;border-radius:14px;background:linear-gradient(135deg,rgba(16,185,129,0.12),rgba(16,185,129,0.04));border:1px solid rgba(16,185,129,0.22)}
+.user-value-label{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:var(--text2)}
+.user-value-amount{font-size:20px;font-weight:900;color:#10b981;font-family:'Space Mono',monospace;letter-spacing:-0.5px;transition:opacity .3s}
+.grand-total{position:relative;overflow:hidden;margin-top:24px;border-radius:20px;padding:24px 22px;background:linear-gradient(135deg,#059669,#10b981 55%,#34d399);box-shadow:0 12px 32px -8px rgba(16,185,129,0.5)}
+.grand-total::before{content:'';position:absolute;top:-40%;right:-10%;width:180px;height:180px;border-radius:50%;background:rgba(255,255,255,0.12)}
+.grand-total::after{content:'';position:absolute;bottom:-50%;left:-5%;width:140px;height:140px;border-radius:50%;background:rgba(255,255,255,0.08)}
+.gt-inner{position:relative;z-index:1}
+.gt-label{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:800;color:rgba(255,255,255,0.92);text-transform:uppercase;letter-spacing:1px}
+.gt-amount{font-size:38px;font-weight:900;color:#fff;font-family:'Space Mono',monospace;line-height:1.1;margin-top:6px;letter-spacing:-1px;transition:opacity .3s}
+.gt-sub{font-size:12px;font-weight:600;color:rgba(255,255,255,0.78);margin-top:6px}
+.gt-breakdown{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap}
+.gt-chip{display:flex;align-items:center;gap:6px;background:rgba(255,255,255,0.16);border:1px solid rgba(255,255,255,0.25);border-radius:100px;padding:5px 12px;font-size:12px;font-weight:800;color:#fff;font-family:'Space Mono',monospace}
+.gt-chip img{width:18px;height:18px;object-fit:contain;border-radius:50%}
 .price-badge{display:inline-flex;align-items:center;padding:2px 7px;border-radius:100px;background:rgba(16,185,129,0.12);border:1px solid rgba(16,185,129,0.25);color:#10b981;font-size:10px;font-weight:800;font-family:'Space Mono',monospace}
 .modal-price{display:flex;justify-content:center;margin:8px 0 12px;min-height:22px}
 .modal-price.na{display:none}
@@ -273,6 +303,9 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--text);heig
       <input id="searchAll" type="text" placeholder="Rechercher…"/>
     </div>
     <div class="topbar-right">
+      <button class="icon-btn" onclick="openGlobalSearch()" title="Recherche globale">
+        <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+      </button>
       <button class="icon-btn" onclick="clearCache()" title="Vider le cache">
         <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
       </button>
@@ -312,6 +345,20 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--text);heig
   <div class="app-body" id="appBody"></div>
   <div class="app-body" id="stockBody" style="display:none;"></div>
   <div class="app-body" id="adminBody" style="display:none;"></div>
+</div>
+
+<!-- RECHERCHE GLOBALE -->
+<div class="gs-overlay" id="gsOverlay">
+  <div class="gs-header">
+    <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+    <input class="gs-input" id="gsInput" type="text" placeholder="Rechercher une carte par nom ou numéro…" oninput="doGlobalSearch()" onkeydown="if(event.key==='Escape')closeGlobalSearch()"/>
+    <button class="gs-close" onclick="closeGlobalSearch()">
+      <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>
+    </button>
+  </div>
+  <div class="gs-results" id="gsResults">
+    <div class="gs-empty">🔍 Tape le nom ou le numéro d'une carte</div>
+  </div>
 </div>
 
 <!-- OVERLAY + MODAL -->
@@ -623,6 +670,7 @@ function loadFromCache(){
     if(b&&c&&ca&&q){
       blocs=JSON.parse(b); collections=JSON.parse(c);
       cartes=JSON.parse(ca); quantites=JSON.parse(q);
+      buildQuantitesIndex();
       return blocs.length>0 && cartes.length>0;
     }
   }catch(e){}
@@ -656,6 +704,7 @@ async function loadData(){
       sbGet('quantites','?select=*')
     ]);
     blocs=b; collections=c; cartes=ca; quantites=q;
+    buildQuantitesIndex();
     saveToCache();
     // Re-render uniquement si on est sur la vue blocs (pas en pleine navigation)
     if(!currentBlocId && !currentCollId) renderBlocs();
@@ -1093,6 +1142,7 @@ function renderStock(){
       });
     });
   });
+
   // Résumé
   const title=document.createElement('div'); title.className='section-title'; title.innerHTML='📊 Résumé des stocks';
   body.appendChild(title);
@@ -1108,10 +1158,72 @@ function renderStock(){
       <div><div style="font-size:15px;font-weight:900;">${acc.label}</div>
       <div style="font-size:12px;color:var(--text2);font-weight:600;">${s.doubles.length} cartes en double</div></div></div>
       <div class="stock-stat"><span class="stock-stat-label">Total exemplaires</span><span class="stock-stat-value">${s.total}</span></div>
-      ${TYPES.map(t=>`<div class="stock-stat"><span class="stock-stat-label"><span class="badge badge-${t}">${t.toUpperCase()}</span> ${TYPE_LABELS[t]}</span><span class="stock-stat-value">${s.byType[t]}</span></div>`).join('')}`;
+      ${TYPES.map(t=>`<div class="stock-stat"><span class="stock-stat-label"><span class="badge badge-${t}">${t.toUpperCase()}</span> ${TYPE_LABELS[t]}</span><span class="stock-stat-value">${s.byType[t]}</span></div>`).join('')}
+      <div class="user-value">
+        <span class="user-value-label">💰 Valeur estimée</span>
+        <span class="user-value-amount" id="uv-${owner}">Calcul…</span>
+      </div>`;
     grid.appendChild(card);
   });
   body.appendChild(grid);
+
+  // ── Grand total global (en bas) ─────────────────────────────────────
+  const gt=document.createElement('div'); gt.className='grand-total';
+  gt.innerHTML=`<div class="gt-inner">
+    <div class="gt-label">💰 Valeur totale de la collection</div>
+    <div class="gt-amount" id="grandTotalValue">Calcul…</div>
+    <div class="gt-sub" id="grandTotalSub">Estimation en cours…</div>
+    <div class="gt-breakdown">
+      ${OWNERS.map(o=>`<span class="gt-chip"><img src="${ACCOUNTS[o].img}"> ${ACCOUNTS[o].label} <span id="gtc-${o}">…</span></span>`).join('')}
+    </div>
+  </div>`;
+  body.appendChild(gt);
+
+  // ── Calcul des valeurs (par utilisateur + global), en lots parallèles ─
+  (async()=>{
+    const allCards=cartes.filter(c=>OWNERS.some(o=>TYPES.some(t=>getQuantite(c.id,o,t)>0)));
+    const perOwner={}; OWNERS.forEach(o=>perOwner[o]=0);
+    let grand=0, done=0, priced=0;
+    const BATCH=20;
+    const fmt=v=>v.toFixed(2)+' €';
+    const stillThere=()=>document.getElementById('grandTotalValue');
+    for(let i=0;i<allCards.length;i+=BATCH){
+      const batch=allCards.slice(i,i+BATCH);
+      const results=await Promise.all(batch.map(async card=>{
+        try{
+          const p=await getPriceForCard(card);
+          if(p==null) return null;
+          const byOwner={};
+          OWNERS.forEach(o=>{ byOwner[o]=p*TYPES.reduce((s,t)=>s+getQuantite(card.id,o,t),0); });
+          return byOwner;
+        }catch(e){ return null; }
+      }));
+      results.forEach(r=>{
+        if(!r) return;
+        priced++;
+        OWNERS.forEach(o=>{ perOwner[o]+=r[o]; grand+=r[o]; });
+      });
+      done+=batch.length;
+      if(!stillThere()) return; // utilisateur a quitté l'onglet
+      // Mise à jour en direct
+      OWNERS.forEach(o=>{
+        const e=document.getElementById('uv-'+o); if(e){ e.textContent=fmt(perOwner[o]); e.style.opacity=done<allCards.length?'0.6':'1'; }
+        const c=document.getElementById('gtc-'+o); if(c) c.textContent=fmt(perOwner[o]);
+      });
+      const g=document.getElementById('grandTotalValue'); if(g){ g.textContent=fmt(grand); g.style.opacity=done<allCards.length?'0.75':'1'; }
+      const sub=document.getElementById('grandTotalSub');
+      if(sub) sub.textContent = done<allCards.length
+        ? `Calcul ${done}/${allCards.length}…`
+        : `${priced} cartes avec un prix connu`;
+    }
+    // Finalisation
+    OWNERS.forEach(o=>{
+      const e=document.getElementById('uv-'+o); if(e){ e.textContent=fmt(perOwner[o]); e.style.opacity='1'; }
+      const c=document.getElementById('gtc-'+o); if(c) c.textContent=fmt(perOwner[o]);
+    });
+    const g=document.getElementById('grandTotalValue'); if(g){ g.textContent=fmt(grand); g.style.opacity='1'; }
+    const sub=document.getElementById('grandTotalSub'); if(sub) sub.textContent=`${priced} cartes avec un prix connu`;
+  })();
 }
 
 /* ══ ADMIN ═════════════════════════════════════════════ */
@@ -1452,11 +1564,57 @@ async function deleteCollection(){
   } catch(e) { showToast('❌ '+e.message); }
 }
 
+// ══ RECHERCHE GLOBALE ════════════════════════════════════════════════════
+function openGlobalSearch(){
+  document.getElementById('gsOverlay').classList.add('open');
+  setTimeout(()=>document.getElementById('gsInput').focus(),100);
+}
+function closeGlobalSearch(){
+  document.getElementById('gsOverlay').classList.remove('open');
+  document.getElementById('gsInput').value='';
+  document.getElementById('gsResults').innerHTML='<div class="gs-empty">🔍 Tape le nom ou le numéro d\'une carte</div>';
+}
+function doGlobalSearch(){
+  const q=(document.getElementById('gsInput').value||'').toLowerCase().trim();
+  const res=document.getElementById('gsResults');
+  if(q.length<2){ res.innerHTML='<div class="gs-empty">🔍 Tape au moins 2 caractères</div>'; return; }
+  const viewOwner=currentUser||null;
+  const owners=viewOwner?[viewOwner]:OWNERS;
+  const matches=cartes.filter(c=>(c.nom||'').toLowerCase().includes(q)||(c.numero||'').toLowerCase().includes(q)).slice(0,60);
+  if(matches.length===0){ res.innerHTML='<div class="gs-empty">Aucune carte trouvée pour "'+q+'"</div>'; return; }
+  res.innerHTML='';
+  matches.forEach(card=>{
+    const coll=collections.find(c=>c.id===card.collection_id);
+    const bloc=blocs.find(b=>b.id===coll?.bloc_id);
+    const badgesHtml=TYPES.map(t=>{
+      const total=owners.reduce((s,o)=>s+getQuantite(card.id,o,t),0);
+      return total>0?`<span class="badge badge-${t}" style="font-size:9px;padding:1px 5px;">${t.toUpperCase()} ×${total}</span>`:'';
+    }).filter(Boolean).join(' ');
+    const cachedPrice=priceCache[card.tcgdex_id];
+    const priceHtml=cachedPrice!=null?`<div class="gs-item-price">${cachedPrice.toFixed(2)} €</div>`:'';
+    const item=document.createElement('div');
+    item.className='gs-item';
+    item.innerHTML=`<img src="${optImg(card.image)}" alt="${esc(card.nom)}" loading="lazy">
+      <div class="gs-item-info">
+        <div class="gs-item-name">${esc(card.nom)}</div>
+        <div class="gs-item-meta">${esc(coll?.nom||'')} · ${esc(bloc?.nom||'')} · n°${esc(card.numero||'')}</div>
+        <div style="margin-top:3px;">${badgesHtml||'<span style="font-size:10px;color:var(--text2);">Non possédée</span>'}</div>
+      </div>
+      ${priceHtml}`;
+    item.onclick=()=>{
+      closeGlobalSearch();
+      if(coll&&bloc){ switchTab('collection'); renderCards(coll.id,coll.nom,bloc.id,bloc.nom); setTimeout(()=>openModal(card.id),120); }
+    };
+    res.appendChild(item);
+  });
+}
+
 /* ══ AUTO REFRESH ══════════════════════════════════════ */
 setInterval(async ()=>{
   try {
     const newQty=await sbGet('quantites','?select=*');
     quantites=newQty;
+    buildQuantitesIndex();
     if(currentCollId) applyFilters();
     if(activeTab==='stock') renderStock();
   } catch(e) {}
