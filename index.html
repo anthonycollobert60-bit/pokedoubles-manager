@@ -612,19 +612,56 @@ function switchTab(tab){
 }
 
 /* ══ DATA LOADING ══════════════════════════════════════ */
+function loadFromCache(){
+  try{
+    const b=localStorage.getItem('pokecards_blocs');
+    const c=localStorage.getItem('pokecards_colls');
+    const ca=localStorage.getItem('pokecards_cartes');
+    const q=localStorage.getItem('pokecards_qtys');
+    if(b&&c&&ca&&q){
+      blocs=JSON.parse(b); collections=JSON.parse(c);
+      cartes=JSON.parse(ca); quantites=JSON.parse(q);
+      return blocs.length>0 && cartes.length>0;
+    }
+  }catch(e){}
+  return false;
+}
+
+function saveToCache(){
+  try{
+    localStorage.setItem('pokecards_blocs', JSON.stringify(blocs));
+    localStorage.setItem('pokecards_colls', JSON.stringify(collections));
+    localStorage.setItem('pokecards_cartes', JSON.stringify(cartes));
+    localStorage.setItem('pokecards_qtys', JSON.stringify(quantites));
+  }catch(e){}
+}
+
 async function loadData(){
-  document.getElementById('appBody').innerHTML='<div class="loading"><div class="spinner"></div><span>Chargement…</span></div>';
+  // 1. Affichage instantané depuis le cache si disponible
+  const hasCache=loadFromCache();
+  if(hasCache){
+    renderBlocs();
+    renderStock();
+  } else {
+    document.getElementById('appBody').innerHTML='<div class="loading"><div class="spinner"></div><span>Chargement…</span></div>';
+  }
+  // 2. Rafraîchissement depuis Supabase en arrière-plan
   try {
-    [blocs, collections, cartes, quantites] = await Promise.all([
+    const [b,c,ca,q] = await Promise.all([
       sbGet('blocs','?select=*&order=ordre.asc'),
       sbGet('collections','?select=*&order=ordre.asc,nom.asc'),
       sbGet('cartes','?select=*&order=ordre.asc'),
       sbGet('quantites','?select=*')
     ]);
-    renderBlocs();
+    blocs=b; collections=c; cartes=ca; quantites=q;
+    saveToCache();
+    // Re-render uniquement si on est sur la vue blocs (pas en pleine navigation)
+    if(!currentBlocId && !currentCollId) renderBlocs();
     renderStock();
   } catch(e) {
-    document.getElementById('appBody').innerHTML=`<div style="padding:24px"><div style="background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);border-radius:12px;padding:20px;color:#ef4444;font-weight:700;">⚠️ Erreur de connexion à la base de données.<br><small style="opacity:0.8">${e.message}</small></div></div>`;
+    if(!hasCache){
+      document.getElementById('appBody').innerHTML=`<div style="padding:24px"><div style="background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);border-radius:12px;padding:20px;color:#ef4444;font-weight:700;">⚠️ Erreur de connexion à la base de données.<br><small style="opacity:0.8">${e.message}</small></div></div>`;
+    }
   }
 }
 
@@ -650,7 +687,7 @@ function countOwnedInBloc(blocId, viewOwner){
   return cols.reduce((s,col)=>s+countOwnedInCollection(col.id,viewOwner),0);
 }
 
-function scrollTop(){ const b=document.getElementById('appBody'); if(b) b.scrollTop=0; }
+function scrollTop(){ const b=document.getElementById('appBody'); if(b) b.scrollTop=0; window.scrollTo(0,0); }
 
 function renderBlocs(){
   currentBlocId=null; currentCollId=null; currentCardId=null;
@@ -1109,7 +1146,10 @@ function renderAdmin(){
       ${wrapSelect("importCollId", collOpts, "-- Choisir une collection --")}
     </div>
     <div class="form-row">
-      <input class="form-input" id="tcgdexQuery" placeholder="Nom ou code français (ex: ev01, Fable Nébuleuse)"/>
+      <div style="position:relative;flex:1;">
+        <input class="form-input" id="tcgdexQuery" placeholder="Nom ou code français (ex: ev01, Fable Nébuleuse)" style="width:100%;padding-right:32px;"/>
+        <button type="button" onclick="document.getElementById('tcgdexQuery').value=''" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);width:22px;height:22px;border-radius:50%;border:none;background:var(--surface2);color:var(--text2);cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;">×</button>
+      </div>
       <button class="btn-sm" onclick="searchTcgdex()">Rechercher</button>
     </div>
     <div id="tcgdexResults"></div>
