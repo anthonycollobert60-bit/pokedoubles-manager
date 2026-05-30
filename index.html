@@ -236,6 +236,7 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--text);heig
 .scan-shutter:disabled{opacity:0.5}
 .scan-status{text-align:center;font-size:13px;font-weight:700;color:var(--text2);margin-top:12px;min-height:18px}
 .scan-start-btn{display:block;width:100%;padding:14px;border-radius:14px;border:none;background:var(--accent);color:#fff;font-weight:900;font-size:15px;cursor:pointer;margin-top:8px}
+.scan-photo-btn{display:block;width:100%;padding:14px;border-radius:14px;border:1.5px solid var(--accent);background:transparent;color:var(--accent);font-weight:900;font-size:15px;cursor:pointer;margin-top:10px}
 .scan-result{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:16px;color:var(--text);margin-top:16px}
 .sr-card{display:flex;gap:12px;align-items:center;margin-bottom:12px}
 .sr-card img{width:60px;height:84px;object-fit:contain;border-radius:6px;background:var(--surface2)}
@@ -1677,10 +1678,12 @@ function renderScan(){
       <div class="scan-hint" id="scanHint" style="display:none;">Cadre le <b>numéro</b> de la carte (ex : 042/198) bien lisible</div>
       <div id="scanPlaceholder" style="color:#fff;text-align:center;padding:24px;font-size:14px;font-weight:600;opacity:0.85;">
         <div style="font-size:40px;margin-bottom:8px;">📷</div>
-        Appuie sur « Démarrer la caméra » pour scanner tes cartes.
+        Prends une photo de ta carte ou utilise la caméra en direct.
       </div>
     </div>
-    <button class="scan-start-btn" id="scanStartBtn" onclick="startScanCam()">▶️ Démarrer la caméra</button>
+    <button class="scan-start-btn" id="scanStartBtn" onclick="startScanCam()">📹 Caméra en direct</button>
+    <button class="scan-photo-btn" id="scanPhotoBtn" onclick="document.getElementById('scanFileInput').click()">📸 Prendre une photo</button>
+    <input type="file" id="scanFileInput" accept="image/*" capture="environment" style="display:none;" onchange="analyzeScanPhoto(event)">
     <button class="scan-shutter" id="scanShutter" onclick="captureScan()" style="display:none;"></button>
     <div class="scan-status" id="scanStatus"></div>
     <div id="scanResultArea"></div>
@@ -1787,6 +1790,7 @@ async function startScanCam(){
     try{ await v.play(); }catch(ePlay){ /* certains navigateurs lèvent une erreur bénigne */ }
     scanActive=true;
     if(btn) btn.style.display='none';
+    const pBtn=document.getElementById('scanPhotoBtn'); if(pBtn) pBtn.style.display='none';
     document.getElementById('scanShutter').style.display='';
     document.getElementById('scanShutter').disabled=false;
     setScanStatus('Vise une carte puis appuie sur le bouton blanc');
@@ -1796,7 +1800,7 @@ async function startScanCam(){
     document.getElementById('scanFrame').style.display='none';
     document.getElementById('scanHint').style.display='none';
     document.getElementById('scanPlaceholder').style.display='';
-    if(btn){ btn.disabled=false; btn.textContent='▶️ Démarrer la caméra'; }
+    if(btn){ btn.disabled=false; btn.textContent='📹 Caméra en direct'; }
     let msg='⚠️ Impossible d\'accéder à la caméra';
     if(e && (e.message==='TIMEOUT')) msg='⚠️ La caméra n\'a pas répondu. Tu utilises probablement un navigateur intégré (dans une autre app). Ouvre le site directement dans Chrome ou Safari.';
     else if(e && e.name==='NotAllowedError') msg='⚠️ Accès caméra refusé. Autorise la caméra dans les réglages du navigateur.';
@@ -1862,6 +1866,61 @@ async function captureScan(){
     setScanStatus('❌ Lecture impossible, réessaie');
     document.getElementById('scanShutter').disabled=false;
   }
+}
+
+// Analyse une photo prise avec l'appareil photo natif (meilleure netteté)
+async function analyzeScanPhoto(event){
+  const file=event.target.files && event.target.files[0];
+  event.target.value=''; // réinitialiser pour pouvoir reprendre la même photo
+  if(!file) return;
+  if(typeof Tesseract==='undefined'){ showToast('⚠️ Module OCR non chargé, réessaie'); return; }
+
+  // Masquer le placeholder, afficher un aperçu
+  document.getElementById('scanPlaceholder').style.display='none';
+  setScanStatus('🖼️ Chargement de la photo…');
+
+  const img=new Image();
+  const url=URL.createObjectURL(file);
+  img.onload=async()=>{
+    setScanStatus('🔍 Analyse de la carte…');
+    const iw=img.naturalWidth, ih=img.naturalHeight;
+    // Limiter la taille de travail (sinon OCR très lent sur photos 12 Mpx)
+    const maxDim=1600;
+    let scale=1;
+    if(Math.max(iw,ih)>maxDim) scale=maxDim/Math.max(iw,ih);
+    const canvas=document.getElementById('scanCanvas');
+    canvas.width=Math.round(iw*scale);
+    canvas.height=Math.round(ih*scale);
+    const ctx=canvas.getContext('2d');
+    ctx.imageSmoothingEnabled=true; ctx.imageSmoothingQuality='high';
+    ctx.drawImage(img,0,0,canvas.width,canvas.height);
+    URL.revokeObjectURL(url);
+
+    // Pré-traitement : niveaux de gris + contraste
+    try{
+      const data=ctx.getImageData(0,0,canvas.width,canvas.height);
+      const d=data.data;
+      const contrast=1.4, intercept=128*(1-contrast);
+      for(let i=0;i<d.length;i+=4){
+        let g=0.299*d[i]+0.587*d[i+1]+0.114*d[i+2];
+        g=g*contrast+intercept;
+        g=g<0?0:g>255?255:g;
+        d[i]=d[i+1]=d[i+2]=g;
+      }
+      ctx.putImageData(data,0,0);
+    }catch(ePre){}
+
+    try{
+      const { data }=await Tesseract.recognize(canvas,'eng',{
+        tessedit_char_whitelist:'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789/ '
+      });
+      handleScanText(data.text||'');
+    }catch(e){
+      setScanStatus('❌ Analyse impossible, réessaie');
+    }
+  };
+  img.onerror=()=>{ setScanStatus('❌ Image illisible'); URL.revokeObjectURL(url); };
+  img.src=url;
 }
 
 function handleScanText(rawText){
