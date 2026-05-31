@@ -1115,18 +1115,24 @@ function renderModalQty(carteId){
 }
 
 // Afficher le formulaire inline : menu déroulant rareté + champ quantité
-// Détermine le "total du set" d'une collection (le plus grand total /yyy trouvé, ou le plus grand numéro)
+// Total du set d'une collection.
+// 1) Si le format "xxx/yyy" est présent, on prend yyy (le plus fiable).
+// 2) Sinon : le total = la plus longue séquence continue de numéros depuis 1
+//    (ex : numéros 1..86 présents puis 87,88 secrètes → total = 86).
 function collectionSetTotal(collId){
   const cs=cartes.filter(c=>c.collection_id===collId);
-  let maxTot=0, maxNum=0;
-  cs.forEach(c=>{
-    const mt=(c.numero||'').match(/\/\s*(\d{1,3})/);
-    if(mt){ const t=parseInt(mt[1]); if(t>maxTot) maxTot=t; }
-    const mn=(c.numero||'').match(/(\d{1,3})/);
-    if(mn){ const n=parseInt(mn[1]); if(n>maxNum) maxNum=n; }
-  });
-  // Si on connaît le total officiel (/yyy), on l'utilise. Sinon, faute de mieux, le plus grand numéro.
-  return maxTot>0 ? maxTot : maxNum;
+  let maxTot=0;
+  cs.forEach(c=>{ const mt=(c.numero||'').match(/\/\s*(\d{1,3})/); if(mt){ const t=parseInt(mt[1]); if(t>maxTot) maxTot=t; } });
+  if(maxTot>0) return maxTot;
+  // Ensemble des numéros présents
+  const nums=new Set();
+  cs.forEach(c=>{ const mn=(c.numero||'').match(/(\d{1,3})/); if(mn) nums.add(parseInt(mn[1])); });
+  if(nums.size===0) return 0;
+  // Trouver le plus grand N tel que 1..N soient tous présents (séquence continue)
+  let n=0;
+  while(nums.has(n+1)) n++;
+  // Si pas de séquence continue depuis 1 (numérotation atypique), repli sur le nombre de cartes
+  return n>0 ? n : cs.length;
 }
 
 // Une carte "dépasse-t-elle" le set ? (numéro > total officiel → carte secrète : V, VMAX, EX, etc.)
