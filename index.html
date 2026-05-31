@@ -909,7 +909,7 @@ function renderCards(collId, collNom, blocId, blocNom){
     <button class="back-btn" onclick="renderCollections('${blocId}','${esc(blocNom)}')">
       <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>Retour
     </button>
-    ${currentUser?`<button class="back-btn" style="margin-left:8px;" onclick="setCollectionTotal('${collId}')" title="Définir le nombre de cartes du set (pour gérer les cartes secrètes sans reverse)">⚙️ ${totalLabel}</button>`:''}`;
+    ${currentUser==='anthony'?`<button class="back-btn" style="margin-left:8px;" onclick="setCollectionTotal('${collId}')" title="Définir le nombre de cartes du set (pour gérer les cartes secrètes sans reverse)">⚙️ ${totalLabel}</button>`:''}`;
   const body=document.getElementById('appBody');
   const cards=cartes.filter(c=>c.collection_id===collId);
   const viewOwner=currentUser||null;
