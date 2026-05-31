@@ -1108,6 +1108,8 @@ async function changeQty(carteId, joueur, rarete, delta){
   const idx=quantites.findIndex(x=>x.carte_id===carteId && x.joueur===joueur && x.rarete===rarete);
   if(idx>=0) quantites[idx].quantite=next;
   else quantites.push({carte_id:carteId,joueur,rarete,quantite:next});
+  // Synchroniser l'index (sinon getQuantite reste en retard d'un cran)
+  updateQuantiteIndex(carteId, joueur, rarete, next);
   // Màj affichage
   const el=document.getElementById(`qv-${carteId}-${joueur}-${rarete}`);
   if(el) el.textContent=next;
@@ -1137,6 +1139,7 @@ async function changeQty(carteId, joueur, rarete, delta){
     // Rollback
     const idx2=quantites.findIndex(x=>x.carte_id===carteId && x.joueur===joueur && x.rarete===rarete);
     if(idx2>=0) quantites[idx2].quantite=cur;
+    updateQuantiteIndex(carteId, joueur, rarete, cur);
     if(el) el.textContent=cur;
   }
 }
@@ -1628,6 +1631,13 @@ async function addCarteManual(){
     document.getElementById('manualNum').value='';
     document.getElementById('manualImg').value='';
     showToast('✅ Carte ajoutée');
+    stockDirty=true;
+    // Rafraîchir l'affichage si on regarde justement cette collection
+    if(currentCollId===collId){
+      const coll=collections.find(c=>c.id===collId);
+      const bloc=coll?blocs.find(b=>b.id===coll.bloc_id):null;
+      renderCards(collId, coll?coll.nom:'', bloc?bloc.id:'', bloc?bloc.nom:'');
+    }
   } catch(e) { showToast('❌ '+e.message); }
 }
 
