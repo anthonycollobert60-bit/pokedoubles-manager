@@ -142,6 +142,11 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--text);heig
 .modal-close{width:30px;height:30px;border-radius:50%;border:1px solid var(--border);background:var(--surface2);cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;color:var(--text2);flex-shrink:0;transition:all var(--t)}
 .modal-close:hover{background:var(--border);color:var(--text)}
 .modal img{width:100%;max-width:220px;display:block;margin:0 auto 14px;border-radius:var(--r);background:var(--bg)}
+.modal-img-wrap{position:relative;display:flex;align-items:center;justify-content:center;margin-bottom:4px}
+.modal-nav{position:absolute;top:50%;transform:translateY(-50%);width:40px;height:40px;border-radius:50%;border:none;background:var(--surface2);color:var(--text);display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:2;box-shadow:0 2px 8px rgba(0,0,0,0.25);transition:background var(--t)}
+.modal-nav:active{background:var(--accent);color:#fff}
+.modal-nav.prev{left:0}
+.modal-nav.next{right:0}
 .qty-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
 .qty-block{border-radius:var(--r-lg);padding:12px;border:1px solid var(--border)}
 .qty-block.valentin{border-top:2px solid var(--c-valentin)}
@@ -407,7 +412,15 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--text);heig
     <div><div class="modal-title" id="modalTitle"></div><div class="modal-sub" id="modalSub"></div></div>
     <button class="modal-close" onclick="closeModal()">×</button>
   </div>
-  <img id="modalImg" src="" alt="carte">
+  <div class="modal-img-wrap">
+    <button class="modal-nav prev" id="modalPrev" onclick="modalNav(-1)" title="Carte précédente">
+      <svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
+    </button>
+    <img id="modalImg" src="" alt="carte">
+    <button class="modal-nav next" id="modalNext" onclick="modalNav(1)" title="Carte suivante">
+      <svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
+    </button>
+  </div>
   <div id="modalPrice" class="modal-price na"></div>
   <div id="modalOwnersArea"></div>
 </div>
@@ -987,8 +1000,16 @@ document.getElementById('typeFilter').addEventListener('change', applyFilters);
 /* ══ MODAL ═════════════════════════════════════════════ */
 function openModal(carteId){
   currentCardId=carteId;
+  fillModal(carteId);
+  document.getElementById('modal').style.display='block';
+  document.getElementById('overlay').style.display='block';
+}
+
+// Remplit le contenu de la modal pour une carte donnée (sans la rouvrir)
+function fillModal(carteId){
   const card=cartes.find(c=>c.id===carteId);
   if(!card) return;
+  currentCardId=carteId;
   document.getElementById('modalTitle').textContent=card.nom||'';
   document.getElementById('modalSub').textContent=card.numero||'';
   document.getElementById('modalImg').src=optImg(card.image);
@@ -998,12 +1019,37 @@ function openModal(carteId){
   const priceEl=document.getElementById('modalPrice');
   priceEl.className='modal-price na';
   getPriceForCard(card).then(p=>{
+    if(currentCardId!==carteId) return; // l'utilisateur a déjà changé de carte
     if(p!=null){ priceEl.className='modal-price'; priceEl.innerHTML=`<div class="price-badge" style="font-size:13px;padding:4px 12px;">${p.toFixed(2)} €</div>`; }
     else { priceEl.className='modal-price na'; }
   });
 
-  document.getElementById('modal').style.display='block';
-  document.getElementById('overlay').style.display='block';
+  // Afficher/masquer les flèches selon la position dans la collection
+  const list=modalCardList();
+  const idx=list.indexOf(carteId);
+  const prev=document.getElementById('modalPrev'), next=document.getElementById('modalNext');
+  if(prev) prev.style.visibility = (idx>0) ? 'visible' : 'hidden';
+  if(next) next.style.visibility = (idx>=0 && idx<list.length-1) ? 'visible' : 'hidden';
+}
+
+// Liste ordonnée des id de cartes de la collection en cours (pour naviguer)
+function modalCardList(){
+  const card=cartes.find(c=>c.id===currentCardId);
+  const collId = card ? card.collection_id : currentCollId;
+  if(!collId) return currentCardId?[currentCardId]:[];
+  return cartes.filter(c=>c.collection_id===collId)
+    .sort((a,b)=>(a.ordre??cardOrderNum(a.numero))-(b.ordre??cardOrderNum(b.numero)))
+    .map(c=>c.id);
+}
+
+// Navigue vers la carte précédente (-1) ou suivante (+1) dans la collection
+function modalNav(dir){
+  const list=modalCardList();
+  const idx=list.indexOf(currentCardId);
+  if(idx<0) return;
+  const next=idx+dir;
+  if(next<0 || next>=list.length) return;
+  fillModal(list[next]);
 }
 
 function renderModalQty(carteId){
@@ -1053,7 +1099,7 @@ function renderModalQty(carteId){
       block.appendChild(row);
     });
     // Bouton Ajouter toujours présent si des raretés sont encore à 0
-    const missingTypes=TYPES.filter(t=>getQuantite(carteId,currentUser,t)===0);
+    const missingTypes=TYPES.filter(t=>getQuantite(carteId,currentUser,t)===0 && collectionHasRarete(carteId,t));
     if(missingTypes.length>0){
       const addDiv=document.createElement('div');
       addDiv.id=`qadd-${carteId}-${currentUser}`;
@@ -1069,21 +1115,47 @@ function renderModalQty(carteId){
 }
 
 // Afficher le formulaire inline : menu déroulant rareté + champ quantité
+// Détermine le "total du set" d'une collection (le plus grand total /yyy trouvé, ou le plus grand numéro)
+function collectionSetTotal(collId){
+  const cs=cartes.filter(c=>c.collection_id===collId);
+  let maxTot=0, maxNum=0;
+  cs.forEach(c=>{
+    const mt=(c.numero||'').match(/\/\s*(\d{1,3})/);
+    if(mt){ const t=parseInt(mt[1]); if(t>maxTot) maxTot=t; }
+    const mn=(c.numero||'').match(/(\d{1,3})/);
+    if(mn){ const n=parseInt(mn[1]); if(n>maxNum) maxNum=n; }
+  });
+  // Si on connaît le total officiel (/yyy), on l'utilise. Sinon, faute de mieux, le plus grand numéro.
+  return maxTot>0 ? maxTot : maxNum;
+}
+
+// Une carte "dépasse-t-elle" le set ? (numéro > total officiel → carte secrète : V, VMAX, EX, etc.)
+function cardExceedsSet(carte){
+  if(!carte) return false;
+  const total=collectionSetTotal(carte.collection_id);
+  if(!total) return false;
+  const mn=(carte.numero||'').match(/(\d{1,3})/);
+  if(!mn) return false;
+  return parseInt(mn[1])>total;
+}
+
 function collectionHasRarete(carteId, rarete){
   const carte=cartes.find(c=>c.id===carteId);
   if(!carte) return true; // par sécurité
   const coll=collections.find(c=>c.id===carte.collection_id);
   if(!coll) return true;
+  // Les cartes au-delà du total du set (secrètes : V, VMAX, EX…) n'ont pas de version Reverse
+  if(rarete==='r' && cardExceedsSet(carte)) return false;
   if(rarete==='p') return coll.has_pokeball===true;
   if(rarete==='m') return coll.has_masterball===true;
-  return true; // c et r toujours disponibles
+  return true; // c (et r si dans le set) toujours disponibles
 }
 
 function chooseRareteToAdd(carteId, joueur){
   // Raretés disponibles = à 0 pour ce joueur ET présentes dans la collection
   const available=TYPES.filter(t=>{
     if(getQuantite(carteId,joueur,t)>0) return false; // déjà possédée
-    if((t==='p'||t==='m') && !collectionHasRarete(carteId,t)) return false; // pas dans cette collection
+    if(!collectionHasRarete(carteId,t)) return false; // pas disponible pour cette carte/collection
     return true;
   });
   if(available.length===0) return;
