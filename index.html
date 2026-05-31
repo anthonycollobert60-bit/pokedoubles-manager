@@ -1912,11 +1912,12 @@ async function captureScan(){
   if(!v || !v.videoWidth){ showToast('Caméra pas prête'); return; }
   document.getElementById('scanShutter').disabled=true;
 
-  // 1) Capturer immédiatement une image figée (pleine résolution dispo)
+  // 1) Capturer immédiatement une image figée — pleine résolution de la zone cadrée
   const vw=v.videoWidth, vh=v.videoHeight;
-  const frameW=vw*0.74, frameH=Math.min(vh*0.92, frameW*88/63);
+  const frameW=vw*0.80, frameH=Math.min(vh*0.95, frameW*88/63);
   const sx=(vw-frameW)/2, sy=(vh-frameH)/2;
   const canvas=document.getElementById('scanCanvas');
+  // On garde la résolution native (pas de réduction) pour que le petit numéro ait un max de pixels
   canvas.width=Math.round(frameW);
   canvas.height=Math.round(frameH);
   const ctx=canvas.getContext('2d');
@@ -1958,9 +1959,9 @@ async function runScanOCR(srcCanvas, fast){
     // region: {x,y,w,h} en proportions (0..1) de l'image source
     const sx=Math.round(region.x*W), sy=Math.round(region.y*H);
     const sw=Math.round(region.w*W), sh=Math.round(region.h*H);
-    // Viser une hauteur de travail d'environ 200px pour la zone : net pour les chiffres et rapide
-    let scale = 200/Math.max(1,sh);
-    if(scale>2.5) scale=2.5; if(scale<1) scale=1;
+    // Viser une hauteur de travail d'environ 320px : le petit numéro a besoin de pixels pour être lisible
+    let scale = 320/Math.max(1,sh);
+    if(scale>4) scale=4; if(scale<1) scale=1;
     c.width=Math.round(sw*scale); c.height=Math.round(sh*scale);
     ctx.imageSmoothingEnabled=true; ctx.imageSmoothingQuality='high';
     ctx.drawImage(srcCanvas, sx,sy,sw,sh, 0,0,c.width,c.height);
@@ -2021,9 +2022,10 @@ async function runScanOCR(srcCanvas, fast){
   }
 
   // ── Lire UNIQUEMENT le NUMÉRO (bas de la carte) — rapide et fiable ──
-  const rTight={x:0.0, y:0.80, w:0.55, h:0.20};   // bas-gauche élargi (tolérant au cadrage)
-  const rWide ={x:0.0, y:0.74, w:0.65, h:0.26};   // bas-gauche large
-  const rBand ={x:0.0, y:0.70, w:1.0,  h:0.30};   // bande basse complète
+  const rNum  ={x:0.04, y:0.84, w:0.42, h:0.10};  // ciblé sur le numéro (ex: 008/086) sous le texte
+  const rTight={x:0.0,  y:0.80, w:0.55, h:0.20};  // bas-gauche élargi (tolérant au cadrage)
+  const rWide ={x:0.0,  y:0.74, w:0.65, h:0.26};  // bas-gauche large
+  const rBand ={x:0.0,  y:0.70, w:1.0,  h:0.30};  // bande basse complète
   // En mode rapide (collection présélectionnée), le numéro seul suffit → on lit une zone minuscule.
   // Le motif "xxx/yyy" reste prioritaire, mais un simple "xxx" suffit à identifier la carte dans le set.
   const hasFull = t => /\d{1,3}\s*\/\s*\d{1,3}/.test(t);
@@ -2031,16 +2033,20 @@ async function runScanOCR(srcCanvas, fast){
 
   // Séquence courte pour le mode rapide, complète sinon
   const sequence = fast ? [
+    [rNum,  'binary'],
+    [rNum,  'adaptive'],
     [rTight,'binary'],
     [rTight,'adaptive'],
     [rWide, 'binary'],
-    [rTight,'adaptive-inv']
+    [rNum,  'adaptive-inv']
   ] : [
+    [rNum,  'binary'],
+    [rNum,  'adaptive'],
     [rTight,'binary'],
     [rTight,'adaptive'],
     [rWide, 'binary'],
     [rWide, 'adaptive'],
-    [rTight,'adaptive-inv'],
+    [rNum,  'adaptive-inv'],
     [rBand, 'adaptive'],
     [rWide, 'contrast']
   ];
