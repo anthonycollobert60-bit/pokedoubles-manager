@@ -244,6 +244,11 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--text);heig
 .sr-rarity{display:flex;gap:6px;margin:10px 0}
 .sr-rarity button{flex:1;padding:9px 4px;border-radius:10px;border:1.5px solid var(--border);background:var(--bg);color:var(--text);font-weight:800;cursor:pointer;font-size:13px;transition:all var(--t)}
 .sr-rarity button.active{border-color:var(--accent);background:var(--accent);color:#fff}
+.sr-qty{display:flex;align-items:center;gap:10px;margin:4px 0 2px}
+.sr-qty-btn{width:44px;height:44px;border-radius:12px;border:1.5px solid var(--border);background:var(--bg);color:var(--text);font-size:22px;font-weight:800;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.sr-qty-btn:active{background:var(--surface2)}
+.sr-qty-input{flex:1;text-align:center;padding:11px;border-radius:12px;border:1.5px solid var(--border);background:var(--bg);color:var(--text);font-size:18px;font-weight:900;font-family:'Space Mono',monospace}
+.sr-qty-input::-webkit-outer-spin-button,.sr-qty-input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
 .sr-actions{display:flex;gap:10px;margin-top:6px}
 .sr-actions button{flex:1;padding:12px;border-radius:12px;border:none;font-weight:800;font-size:14px;cursor:pointer}
 .sr-add{background:#10b981;color:#fff}
@@ -1688,6 +1693,7 @@ async function deleteCollection(){
 
 // ══ SCANNER CAMÉRA (OCR) — onglet ═══════════════════════════════════════
 let scanStream=null, scanRarity='c', scanPending=null, scanActive=false;
+let scanQty=1; // nombre d'exemplaires à ajouter au scan
 let scanCollFilter=''; // id de la collection choisie pour restreindre le scan
 
 // Rendu de l'onglet Scan
@@ -2185,7 +2191,7 @@ function pickScanCard(carteId){
 }
 
 function renderScanConfirm(card, detected){
-  scanPending=card; scanRarity='c';
+  scanPending=card; scanRarity='c'; scanQty=1;
   const coll=collections.find(c=>c.id===card.collection_id);
   const bloc=blocs.find(b=>b.id===coll?.bloc_id);
   const box=document.getElementById('scanResultArea');
@@ -2201,6 +2207,13 @@ function renderScanConfirm(card, detected){
     </div>
     <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:6px;">Rareté</div>
     <div class="sr-rarity" id="srRarity">${rarityBtns}</div>
+    <div style="font-size:12px;font-weight:700;color:var(--text2);margin:12px 0 6px;">Nombre d'exemplaires</div>
+    <div class="sr-qty">
+      <button class="sr-qty-btn" onclick="changeScanQty(-1)">−</button>
+      <input id="srQtyInput" class="sr-qty-input" type="number" min="1" value="1" inputmode="numeric"
+        onchange="setScanQty(this.value)" oninput="setScanQty(this.value)">
+      <button class="sr-qty-btn" onclick="changeScanQty(1)">＋</button>
+    </div>
     <div class="sr-actions">
       <button class="sr-retry" onclick="retryScan()">↻ Re-scanner</button>
       <button class="sr-add" onclick="confirmScanAdd()">＋ Ajouter</button>
@@ -2213,12 +2226,27 @@ function setScanRarity(t){
   document.querySelectorAll('#srRarity button').forEach(b=>b.classList.toggle('active', b.dataset.r===t));
 }
 
+// Définit la quantité (depuis le champ texte)
+function setScanQty(v){
+  let n=parseInt(v,10);
+  if(isNaN(n)||n<1) n=1;
+  if(n>999) n=999;
+  scanQty=n;
+}
+// Incrémente/décrémente via les boutons − / +
+function changeScanQty(delta){
+  scanQty=Math.max(1,Math.min(999,scanQty+delta));
+  const input=document.getElementById('srQtyInput');
+  if(input) input.value=scanQty;
+}
+
 async function confirmScanAdd(){
   if(!scanPending || !currentUser) return;
   const card=scanPending;
   const rarete=scanRarity;
-  const newQty=await changeQty(card.id, currentUser, rarete, +1);
-  showToast(`✅ ${card.nom} (${rarete.toUpperCase()}) — tu en as ${newQty}`);
+  const qty=Math.max(1,scanQty|0);
+  const newQty=await changeQty(card.id, currentUser, rarete, qty);
+  showToast(`✅ ${card.nom} (${rarete.toUpperCase()}) +${qty} — tu en as ${newQty}`);
   retryScan();
 }
 
