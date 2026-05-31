@@ -236,7 +236,6 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--text);heig
 .scan-shutter:disabled{opacity:0.5}
 .scan-status{text-align:center;font-size:13px;font-weight:700;color:var(--text2);margin-top:12px;min-height:18px}
 .scan-start-btn{display:block;width:100%;padding:14px;border-radius:14px;border:none;background:var(--accent);color:#fff;font-weight:900;font-size:15px;cursor:pointer;margin-top:8px}
-.scan-photo-btn{display:block;width:100%;padding:14px;border-radius:14px;border:1.5px solid var(--accent);background:transparent;color:var(--accent);font-weight:900;font-size:15px;cursor:pointer;margin-top:10px}
 .scan-result{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:16px;color:var(--text);margin-top:16px}
 .sr-card{display:flex;gap:12px;align-items:center;margin-bottom:12px}
 .sr-card img{width:60px;height:84px;object-fit:contain;border-radius:6px;background:var(--surface2)}
@@ -1678,12 +1677,10 @@ function renderScan(){
       <div class="scan-hint" id="scanHint" style="display:none;">Cadre le <b>numéro</b> de la carte (ex : 042/198) bien lisible</div>
       <div id="scanPlaceholder" style="color:#fff;text-align:center;padding:24px;font-size:14px;font-weight:600;opacity:0.85;">
         <div style="font-size:40px;margin-bottom:8px;">📷</div>
-        Prends une photo de ta carte ou utilise la caméra en direct.
+        Démarre la caméra, vise une carte et appuie sur le bouton.
       </div>
     </div>
-    <button class="scan-start-btn" id="scanStartBtn" onclick="startScanCam()">📹 Caméra en direct</button>
-    <button class="scan-photo-btn" id="scanPhotoBtn" onclick="document.getElementById('scanFileInput').click()">📸 Prendre une photo</button>
-    <input type="file" id="scanFileInput" accept="image/*" capture="environment" style="display:none;" onchange="analyzeScanPhoto(event)">
+    <button class="scan-start-btn" id="scanStartBtn" onclick="startScanCam()">▶️ Démarrer la caméra</button>
     <button class="scan-shutter" id="scanShutter" onclick="captureScan()" style="display:none;"></button>
     <div class="scan-status" id="scanStatus"></div>
     <div id="scanResultArea"></div>
@@ -1702,28 +1699,6 @@ function renderScan(){
 
 async function startScanCam(){
   if(typeof Tesseract==='undefined'){ showToast('⚠️ Module OCR non chargé, réessaie'); return; }
-  // ── DIAGNOSTIC visible (pour comprendre ce qui bloque) ──
-  let diag=document.getElementById('scanDiag');
-  if(!diag){
-    diag=document.createElement('div');
-    diag.id='scanDiag';
-    diag.style.cssText='font-size:11px;color:var(--text2);font-family:monospace;margin-top:10px;line-height:1.6;white-space:pre-wrap;';
-    const area=document.getElementById('scanResultArea');
-    if(area) area.parentNode.insertBefore(diag, area);
-  }
-  let perm='?';
-  try{
-    if(navigator.permissions && navigator.permissions.query){
-      const st=await navigator.permissions.query({name:'camera'});
-      perm=st.state; // granted / denied / prompt
-    }
-  }catch(e){ perm='non disponible'; }
-  diag.textContent =
-    'HTTPS (contexte sécurisé): '+(window.isSecureContext?'oui':'NON')+'\n'+
-    'API caméra disponible: '+((navigator.mediaDevices&&navigator.mediaDevices.getUserMedia)?'oui':'NON')+'\n'+
-    'Permission caméra: '+perm+'\n'+
-    'Navigateur: '+(navigator.userAgent||'').slice(0,60);
-  // ── Fin diagnostic ──
   // La caméra exige un contexte sécurisé (HTTPS) sauf en localhost
   if(!window.isSecureContext && location.hostname!=='localhost' && location.hostname!=='127.0.0.1'){
     setScanStatus('⚠️ La caméra nécessite une connexion HTTPS (https://…)');
@@ -1790,7 +1765,6 @@ async function startScanCam(){
     try{ await v.play(); }catch(ePlay){ /* certains navigateurs lèvent une erreur bénigne */ }
     scanActive=true;
     if(btn) btn.style.display='none';
-    const pBtn=document.getElementById('scanPhotoBtn'); if(pBtn) pBtn.style.display='none';
     document.getElementById('scanShutter').style.display='';
     document.getElementById('scanShutter').disabled=false;
     setScanStatus('Vise une carte puis appuie sur le bouton blanc');
@@ -1824,13 +1798,9 @@ async function captureScan(){
   const v=document.getElementById('scanVideo');
   if(!v || !v.videoWidth){ showToast('Caméra pas prête'); return; }
   document.getElementById('scanShutter').disabled=true;
-  setScanStatus('📸 Mise au point…');
-  // Laisser 400ms à l'autofocus pour se stabiliser avant la capture
-  await new Promise(r=>setTimeout(r,400));
-  setScanStatus('🔍 Analyse de la carte…');
 
+  // 1) Capturer immédiatement une image figée (pleine résolution dispo)
   const vw=v.videoWidth, vh=v.videoHeight;
-  // Recadrer sur la zone du cadre (la carte)
   const frameW=vw*0.74, frameH=Math.min(vh*0.92, frameW*88/63);
   const sx=(vw-frameW)/2, sy=(vh-frameH)/2;
   const canvas=document.getElementById('scanCanvas');
@@ -1840,6 +1810,19 @@ async function captureScan(){
   ctx.imageSmoothingEnabled=true; ctx.imageSmoothingQuality='high';
   ctx.drawImage(v, sx, sy, frameW, frameH, 0, 0, canvas.width, canvas.height);
 
+  // 2) Geler l'aperçu : afficher l'image capturée par-dessus la vidéo
+  let frozen=document.getElementById('scanFrozen');
+  if(!frozen){
+    frozen=document.createElement('img');
+    frozen.id='scanFrozen';
+    frozen.style.cssText='position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:3;';
+    document.getElementById('scanCamWrap').appendChild(frozen);
+  }
+  frozen.src=canvas.toDataURL('image/jpeg',0.9);
+  frozen.style.display='';
+  setScanStatus('✅ Image capturée — tu peux baisser le téléphone. Analyse en cours…');
+
+  // 3) Analyser l'image figée (la caméra peut être bougée pendant ce temps)
   try{
     const text=await runScanOCR(canvas);
     handleScanText(text);
@@ -1849,44 +1832,6 @@ async function captureScan(){
   }
 }
 
-// Analyse une photo prise avec l'appareil photo natif (meilleure netteté)
-async function analyzeScanPhoto(event){
-  const file=event.target.files && event.target.files[0];
-  event.target.value=''; // réinitialiser pour pouvoir reprendre la même photo
-  if(!file) return;
-  if(typeof Tesseract==='undefined'){ showToast('⚠️ Module OCR non chargé, réessaie'); return; }
-
-  // Masquer le placeholder, afficher un aperçu
-  document.getElementById('scanPlaceholder').style.display='none';
-  setScanStatus('🖼️ Chargement de la photo…');
-
-  const img=new Image();
-  const url=URL.createObjectURL(file);
-  img.onload=async()=>{
-    setScanStatus('🔍 Analyse de la carte…');
-    const iw=img.naturalWidth, ih=img.naturalHeight;
-    // Limiter la taille de travail (sinon OCR très lent sur photos 12 Mpx)
-    const maxDim=1600;
-    let scale=1;
-    if(Math.max(iw,ih)>maxDim) scale=maxDim/Math.max(iw,ih);
-    const canvas=document.getElementById('scanCanvas');
-    canvas.width=Math.round(iw*scale);
-    canvas.height=Math.round(ih*scale);
-    const ctx=canvas.getContext('2d');
-    ctx.imageSmoothingEnabled=true; ctx.imageSmoothingQuality='high';
-    ctx.drawImage(img,0,0,canvas.width,canvas.height);
-    URL.revokeObjectURL(url);
-
-    try{
-      const text=await runScanOCR(canvas);
-      handleScanText(text);
-    }catch(e){
-      setScanStatus('❌ Analyse impossible, réessaie');
-    }
-  };
-  img.onerror=()=>{ setScanStatus('❌ Image illisible'); URL.revokeObjectURL(url); };
-  img.src=url;
-}
 
 // OCR multi-passes : essaie plusieurs traitements et garde le meilleur résultat.
 // Gère les cartes colorées/brillantes (reverse, holo) où un contraste fixe échoue.
@@ -2007,7 +1952,34 @@ function handleScanText(rawText){
   const norm=s=>(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
   const nWords=words.map(norm);
 
-  // Score chaque carte sur 3 critères : NOM (le plus fiable) + numéro + total du set
+  // Distance de Levenshtein (pour tolérer les fautes de lecture OCR sur le nom)
+  function lev(a,b){
+    const m=a.length,n=b.length;
+    if(!m) return n; if(!n) return m;
+    const dp=Array.from({length:m+1},(_,i)=>[i,...Array(n).fill(0)]);
+    for(let j=0;j<=n;j++) dp[0][j]=j;
+    for(let i=1;i<=m;i++) for(let j=1;j<=n;j++){
+      dp[i][j]=Math.min(dp[i-1][j]+1, dp[i][j-1]+1, dp[i-1][j-1]+(a[i-1]===b[j-1]?0:1));
+    }
+    return dp[m][n];
+  }
+  // Le nom d'une carte est-il "reconnaissable" dans les mots OCR ?
+  function nameScore(nomNorm){
+    if(!nomNorm) return 0;
+    let best=0;
+    for(const w of nWords){
+      if(w.length<3) continue;
+      if(w===nomNorm) return 100;                                  // exact
+      if(nomNorm.includes(w)||w.includes(nomNorm)){ best=Math.max(best, w.length>=4?75:45); continue; }
+      // tolérance fautes OCR : distance faible relative à la longueur
+      const d=lev(w,nomNorm);
+      const maxLen=Math.max(w.length,nomNorm.length);
+      if(maxLen>=4 && d<=Math.floor(maxLen*0.34)){ best=Math.max(best, 60-d*8); }
+    }
+    return best;
+  }
+
+  // Score chaque carte. Tes numéros sont stockés en simple chiffre ("1"), donc le NOM + le NUMÉRO priment.
   const scored=cartes.map(c=>{
     let score=0;
     const mNum=(c.numero||'').match(/(\d{1,3})/);
@@ -2016,46 +1988,51 @@ function handleScanText(rawText){
     const cTot=mTot?parseInt(mTot[1]):null;
     const nomNorm=norm(c.nom);
 
-    // 1) NOM — critère principal. Le nom complet présent dans l'OCR = très fort.
-    let nameHit=false;
-    if(nomNorm){
-      if(nWords.some(w=>w===nomNorm)){ score+=120; nameHit=true; }          // mot exact = nom de la carte
-      else if(nWords.some(w=>w.length>=4 && (nomNorm.includes(w)||w.includes(nomNorm)))){ score+=70; nameHit=true; } // proche
-    }
+    // 1) NOM — critère le plus fiable
+    const ns=nameScore(nomNorm);
+    const nameHit=ns>0;
+    score+=ns;
 
     // 2) NUMÉRO de la carte
     let numHit=false;
     if(num!=null && cNum!=null){
-      if(cNum===num){ score+=50; numHit=true; }
-      else if(numProche(cNum,num)){ score+=20; numHit=true; }
+      if(cNum===num){ score+=55; numHit=true; }
+      else if(numProche(cNum,num)){ score+=22; numHit=true; }
     }
 
-    // 3) TOTAL du set (ex: /086) — très discriminant pour distinguer deux "001"
+    // 3) TOTAL du set — seulement si stocké (rare ici), léger bonus
     let totHit=false;
     if(tot!=null && cTot!=null){
-      if(cTot===tot){ score+=50; totHit=true; }
-      else if(numProche(cTot,tot)){ score+=20; totHit=true; }
+      if(cTot===tot){ score+=40; totHit=true; }
     }
 
-    // BONUS combinaisons : plus on a de critères concordants, plus c'est sûr
-    if(nameHit && numHit) score+=60;
-    if(numHit && totHit) score+=50;   // numéro complet "001/086" qui matche = quasi certain
-    if(nameHit && numHit && totHit) score+=100;
+    // BONUS : nom + numéro qui concordent = quasi certain
+    if(nameHit && numHit) score+=90;
+    if(nameHit && numHit && totHit) score+=60;
 
-    return {c,score,nameHit,numHit,totHit};
+    return {c,score,nameHit,numHit};
   }).filter(x=>x.score>0);
 
-  // Trier par score décroissant
   scored.sort((a,b)=>b.score-a.score);
 
-  // Si une carte a le nom ET le numéro complet (num+tot), on ne garde que les meilleures
-  const candidates=scored.map(x=>x.c);
-
-  if(!detected){
-    if(words.length) detected='Texte détecté : '+words.slice(0,3).join(' ');
-  } else if(words.length){
-    detected+=' · '+words.slice(0,2).join(' ');
+  // Filtrage intelligent pour éviter le bruit :
+  // - Si au moins une carte combine nom+numéro, on ne garde que celles avec le nom reconnu.
+  // - Sinon, si le numéro est lu, on garde les cartes de ce numéro (triées, le nom départage).
+  let candidates;
+  const strong=scored.filter(x=>x.nameHit && x.numHit);
+  if(strong.length){
+    candidates=strong.map(x=>x.c);
+  } else {
+    const nameMatches=scored.filter(x=>x.nameHit);
+    if(nameMatches.length){
+      candidates=nameMatches.map(x=>x.c);
+    } else {
+      // Pas de nom reconnu : se rabattre sur le numéro seul
+      candidates=scored.filter(x=>x.numHit).map(x=>x.c);
+    }
   }
+
+  if(!detected && words.length) detected='Texte : '+words.slice(0,3).join(' ');
   showScanResult(candidates, detected);
 }
 
@@ -2167,6 +2144,9 @@ function retryScan(){
   const box=document.getElementById('scanResultArea');
   if(box) box.innerHTML='';
   scanPending=null;
+  // Masquer l'image figée pour revenir au flux caméra en direct
+  const frozen=document.getElementById('scanFrozen');
+  if(frozen) frozen.style.display='none';
   const sh=document.getElementById('scanShutter');
   if(sh) sh.disabled=false;
   setScanStatus(scanActive?'Vise une carte puis appuie sur le bouton blanc':'');
