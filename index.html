@@ -1936,27 +1936,37 @@ async function runScanOCR(srcCanvas){
     }catch(e){ return ''; }
   }
 
-  // Zones à tester : bas-gauche (numéro le plus fréquent), bande basse complète, image entière
-  const regions=[
-    {x:0.0, y:0.78, w:0.6, h:0.22},   // coin bas-gauche (numéro type 042/198)
-    {x:0.0, y:0.72, w:1.0, h:0.28},   // bande basse complète
-    {x:0.0, y:0.0, w:1.0, h:1.0}      // image entière (repli pour le nom)
+  // ── A) Lire le NUMÉRO (bas de la carte) ──
+  const numRegions=[
+    {x:0.0, y:0.78, w:0.6, h:0.22},   // coin bas-gauche (numéro type 001/086)
+    {x:0.0, y:0.72, w:1.0, h:0.28}    // bande basse complète
   ];
   const modes=['contrast','binary','invert','gray'];
-
-  let bestText='';
-  // 1) Priorité : trouver un numéro xxx/yyy dans les zones basses avec différents traitements
-  for(const region of regions.slice(0,2)){
+  let numText='';
+  for(const region of numRegions){
     for(const mode of modes){
       const t=await pass(region, mode);
-      if(/\d{1,3}\s*\/\s*\d{1,3}/.test(t)){ return t; } // numéro trouvé → on s'arrête
-      if(t.length>bestText.length) bestText=t;
+      if(/\d{1,3}\s*\/\s*\d{1,3}/.test(t)){ numText=t; break; } // numéro complet trouvé
+      if(t.length>numText.length) numText=t;
     }
+    if(/\d{1,3}\s*\/\s*\d{1,3}/.test(numText)) break;
   }
-  // 2) Pas de numéro trouvé : OCR de l'image entière pour récupérer au moins le nom
-  const full=await pass(regions[2], 'contrast');
-  if(full.length>bestText.length) bestText=full;
-  return bestText;
+
+  // ── B) Lire le NOM (haut de la carte) ──
+  const nameRegion={x:0.05, y:0.04, w:0.9, h:0.13}; // bandeau du nom en haut
+  let nameText='';
+  for(const mode of ['contrast','gray','binary']){
+    const t=await pass(nameRegion, mode);
+    if(t.trim().length>nameText.trim().length) nameText=t;
+  }
+
+  // ── C) Combiner nom + numéro pour le scoring (nom + numéro = fiabilité maximale) ──
+  let combined=(nameText+' '+numText).trim();
+  // Repli : si rien d'exploitable, OCR de l'image entière
+  if(combined.replace(/\s/g,'').length<3){
+    combined=await pass({x:0,y:0,w:1,h:1}, 'contrast');
+  }
+  return combined;
 }
 
 // Chiffres facilement confondus par l'OCR (pour tolérer les erreurs de lecture)
@@ -1989,36 +1999,63 @@ function handleScanText(rawText){
   const tot = numMatch ? parseInt(numMatch[2]) : null;
   if(numMatch) detected=`N° détecté : ${numMatch[1]}/${numMatch[2]}`;
 
-  // Mots du nom lus par l'OCR (≥4 lettres)
-  const words=text.toLowerCase().match(/[a-zàâäéèêëïîôöùûüç]{4,}/g)||[];
+  // Mots alphabétiques lus par l'OCR (≥3 lettres) — pour retrouver le nom du Pokémon
+  const words=(text.toLowerCase().match(/[a-zàâäéèêëïîôöùûüç]{3,}/g)||[])
+    .filter(w=>!['base','pokemon','pokémon','attaque','faiblesse','resistance','résistance','retraite','illus','poids','taille','niveau','pieces','piece','pièce'].includes(w));
 
-  // Score chaque carte : numéro exact (100) > numéro du set aussi (150) > numéro proche (40) > nom (par mot +15)
+  // Normalise un texte pour comparaison (sans accents, minuscules)
+  const norm=s=>(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  const nWords=words.map(norm);
+
+  // Score chaque carte sur 3 critères : NOM (le plus fiable) + numéro + total du set
   const scored=cartes.map(c=>{
     let score=0;
     const mNum=(c.numero||'').match(/(\d{1,3})/);
     const mTot=(c.numero||'').match(/\/\s*(\d{1,3})/);
     const cNum=mNum?parseInt(mNum[1]):null;
     const cTot=mTot?parseInt(mTot[1]):null;
+    const nomNorm=norm(c.nom);
+
+    // 1) NOM — critère principal. Le nom complet présent dans l'OCR = très fort.
+    let nameHit=false;
+    if(nomNorm){
+      if(nWords.some(w=>w===nomNorm)){ score+=120; nameHit=true; }          // mot exact = nom de la carte
+      else if(nWords.some(w=>w.length>=4 && (nomNorm.includes(w)||w.includes(nomNorm)))){ score+=70; nameHit=true; } // proche
+    }
+
+    // 2) NUMÉRO de la carte
+    let numHit=false;
     if(num!=null && cNum!=null){
-      if(cNum===num){
-        score+=100;
-        if(tot!=null && cTot!=null && cTot===tot) score+=60; // total du set identique = très probable
-      } else if(numProche(cNum,num)){
-        score+=40; // numéro proche (tolérance OCR)
-        if(tot!=null && cTot!=null && cTot===tot) score+=30;
-      }
+      if(cNum===num){ score+=50; numHit=true; }
+      else if(numProche(cNum,num)){ score+=20; numHit=true; }
     }
-    if(words.length){
-      const nom=(c.nom||'').toLowerCase();
-      words.forEach(w=>{ if(nom.includes(w)) score+=15; });
+
+    // 3) TOTAL du set (ex: /086) — très discriminant pour distinguer deux "001"
+    let totHit=false;
+    if(tot!=null && cTot!=null){
+      if(cTot===tot){ score+=50; totHit=true; }
+      else if(numProche(cTot,tot)){ score+=20; totHit=true; }
     }
-    return {c,score};
+
+    // BONUS combinaisons : plus on a de critères concordants, plus c'est sûr
+    if(nameHit && numHit) score+=60;
+    if(numHit && totHit) score+=50;   // numéro complet "001/086" qui matche = quasi certain
+    if(nameHit && numHit && totHit) score+=100;
+
+    return {c,score,nameHit,numHit,totHit};
   }).filter(x=>x.score>0);
 
+  // Trier par score décroissant
   scored.sort((a,b)=>b.score-a.score);
+
+  // Si une carte a le nom ET le numéro complet (num+tot), on ne garde que les meilleures
   const candidates=scored.map(x=>x.c);
 
-  if(!detected && words.length) detected='Nom détecté';
+  if(!detected){
+    if(words.length) detected='Texte détecté : '+words.slice(0,3).join(' ');
+  } else if(words.length){
+    detected+=' · '+words.slice(0,2).join(' ');
+  }
   showScanResult(candidates, detected);
 }
 
