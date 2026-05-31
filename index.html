@@ -2243,10 +2243,26 @@ function handleScanText(rawText){
   // Filtrage intelligent pour éviter le bruit
   let candidates;
   if(scanCollFilter && num!=null){
-    // Set choisi + numéro lu : le numéro suffit (un seul "001" par set).
-    // On prend les cartes au numéro exact en priorité, sinon numéro proche.
-    const exact=scored.filter(x=>x.numHit).map(x=>x.c);
-    candidates = exact.length ? exact : scored.map(x=>x.c);
+    // Set choisi + numéro lu : le numéro suffit (un seul numéro par set).
+    // Cartes dont le numéro de carte correspond EXACTEMENT au numéro lu
+    const exactMatch = pool.filter(c=>{
+      const m=(c.numero||'').match(/(\d{1,3})/);
+      return m && parseInt(m[1])===num;
+    });
+    if(exactMatch.length===1){
+      // Une seule carte à ce numéro → on va DIRECTEMENT à la confirmation (pas de liste)
+      renderScanConfirm(exactMatch[0], detected);
+      return;
+    }
+    if(exactMatch.length>1){
+      // Plusieurs cartes au même numéro exact (rare) → on propose seulement celles-là
+      candidates=exactMatch;
+    } else {
+      // Numéro exact introuvable : proposer les numéros proches (tolérance OCR) pour correction
+      const close=scored.filter(x=>x.numHit).map(x=>x.c);
+      candidates = close.length ? close : [...pool].sort((a,b)=>cardOrderNum(a.numero)-cardOrderNum(b.numero));
+      detected=(detected||'')+' · numéro non trouvé, choisis ou corrige';
+    }
   } else {
     const strong=scored.filter(x=>x.nameHit && x.numHit);
     if(strong.length){
@@ -2282,11 +2298,18 @@ function showScanResult(candidates, detected){
     return;
   }
   if(candidates.length===1){ renderScanConfirm(candidates[0], detected); return; }
+  showScanList(candidates, detected);
+}
+
+// Affiche une liste de cartes à choisir + recherche manuelle (réutilisable)
+function showScanList(candidates, detected){
+  const box=document.getElementById('scanResultArea');
+  if(!box) return;
   box.innerHTML=`<div class="scan-result">
-    <div class="sr-detected">${esc(detected||'')} · ${candidates.length} carte(s) possible(s)</div>
+    <div class="sr-detected">${esc(detected||'')} · ${candidates.length} carte(s)</div>
     <p style="font-size:14px;font-weight:800;margin-bottom:10px;">Laquelle est-ce ?</p>
     <div class="sr-choices">
-      ${candidates.slice(0,15).map(c=>{
+      ${candidates.slice(0,20).map(c=>{
         const coll=collections.find(x=>x.id===c.collection_id);
         return `<div class="sr-choice" onclick='pickScanCard("${c.id}")'>
           <img src="${esc(optImg(c.image))}" loading="lazy">
@@ -2300,7 +2323,7 @@ function showScanResult(candidates, detected){
     <input id="scanManualSearch" type="text" placeholder="Nom ou numéro de la carte…" oninput="scanManualSearch(this.value)"
       style="width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px;margin-bottom:8px;">
     <div class="sr-choices" id="scanManualResults"></div>
-    <div class="sr-actions"><button class="sr-retry" onclick="retryScan()">↻ Réessayer</button></div></div>`;
+    <div class="sr-actions"><button class="sr-retry" onclick="retryScan()">📷 Carte suivante</button></div></div>`;
   box.scrollIntoView({behavior:'smooth'});
 }
 
@@ -2361,7 +2384,9 @@ function renderScanConfirm(card, detected){
     </div>
     <div class="sr-actions" style="margin-top:8px;">
       <button class="sr-retry" onclick="retryScan()">📷 Carte suivante</button>
-    </div></div>`;
+    </div>
+    <button onclick="correctScanCard()" style="width:100%;margin-top:8px;background:none;border:none;color:var(--text2);font-size:12px;font-weight:600;text-decoration:underline;cursor:pointer;">Ce n'est pas la bonne carte ? Corriger</button>
+    </div>`;
   updateScanRecap(card.id);
   box.scrollIntoView({behavior:'smooth'});
 }
@@ -2377,6 +2402,13 @@ function updateScanRecap(carteId){
   recap.innerHTML = parts.length
     ? `<div class="sr-recap"><span style="font-size:11px;color:var(--text2);font-weight:700;">Déjà dans ta collection :</span> ${parts.join('')}</div>`
     : '';
+}
+
+// Affiche la liste pour corriger manuellement la carte (si la reconnaissance s'est trompée)
+function correctScanCard(){
+  const pool = scanCollFilter ? cartes.filter(c=>c.collection_id===scanCollFilter) : cartes;
+  const sorted=[...pool].sort((a,b)=>cardOrderNum(a.numero)-cardOrderNum(b.numero));
+  showScanList(sorted, 'Choisis la bonne carte');
 }
 
 function setScanRarity(t){
