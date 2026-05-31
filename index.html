@@ -903,10 +903,13 @@ function renderCards(collId, collNom, blocId, blocNom){
   currentCollId=collId; currentBlocId=blocId;
   resetFilters();
   scrollTop();
+  const collObj=collections.find(c=>c.id===collId);
+  const totalLabel = (collObj && collObj.set_total) ? `Set: ${collObj.set_total}` : 'Set: ?';
   document.getElementById('breadcrumbArea').innerHTML=`
     <button class="back-btn" onclick="renderCollections('${blocId}','${esc(blocNom)}')">
       <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>Retour
-    </button>`;
+    </button>
+    ${currentUser?`<button class="back-btn" style="margin-left:8px;" onclick="setCollectionTotal('${collId}')" title="Définir le nombre de cartes du set (pour gérer les cartes secrètes sans reverse)">⚙️ ${totalLabel}</button>`:''}`;
   const body=document.getElementById('appBody');
   const cards=cartes.filter(c=>c.collection_id===collId);
   const viewOwner=currentUser||null;
@@ -1011,10 +1014,7 @@ function fillModal(carteId){
   if(!card) return;
   currentCardId=carteId;
   document.getElementById('modalTitle').textContent=card.nom||'';
-  // DIAGNOSTIC TEMPORAIRE : total du set + carte secrète ?
-  const _tot=collectionSetTotal(card.collection_id);
-  const _exceeds=cardExceedsSet(card);
-  document.getElementById('modalSub').textContent=(card.numero||'')+`  [total set:${_tot} · secrète:${_exceeds?'OUI':'non'}]`;
+  document.getElementById('modalSub').textContent=card.numero||'';
   document.getElementById('modalImg').src=optImg(card.image);
   renderModalQty(carteId);
 
@@ -1123,19 +1123,37 @@ function renderModalQty(carteId){
 // 2) Sinon : le total = la plus longue séquence continue de numéros depuis 1
 //    (ex : numéros 1..86 présents puis 87,88 secrètes → total = 86).
 function collectionSetTotal(collId){
+  // 1) Total saisi manuellement sur la collection (le plus fiable)
+  const coll=collections.find(c=>c.id===collId);
+  if(coll && coll.set_total && parseInt(coll.set_total)>0) return parseInt(coll.set_total);
+  // 2) Sinon, total officiel si une carte porte le format "xxx/yyy"
   const cs=cartes.filter(c=>c.collection_id===collId);
   let maxTot=0;
   cs.forEach(c=>{ const mt=(c.numero||'').match(/\/\s*(\d{1,3})/); if(mt){ const t=parseInt(mt[1]); if(t>maxTot) maxTot=t; } });
   if(maxTot>0) return maxTot;
-  // Ensemble des numéros présents
-  const nums=new Set();
-  cs.forEach(c=>{ const mn=(c.numero||'').match(/(\d{1,3})/); if(mn) nums.add(parseInt(mn[1])); });
-  if(nums.size===0) return 0;
-  // Trouver le plus grand N tel que 1..N soient tous présents (séquence continue)
-  let n=0;
-  while(nums.has(n+1)) n++;
-  // Si pas de séquence continue depuis 1 (numérotation atypique), repli sur le nombre de cartes
-  return n>0 ? n : cs.length;
+  // 3) Pas de total connu : on ne bloque rien (retourne 0)
+  return 0;
+}
+
+// Définit (ou modifie) le nombre de cartes officielles du set pour une collection
+async function setCollectionTotal(collId){
+  const coll=collections.find(c=>c.id===collId);
+  if(!coll) return;
+  const cur=coll.set_total||'';
+  const val=prompt('Nombre de cartes du set (ex: 88 pour un set de 88 cartes).\nLes cartes au numéro supérieur seront considérées comme secrètes (sans Reverse).\nLaisse vide pour ne pas définir.', cur);
+  if(val===null) return; // annulé
+  const trimmed=String(val).trim();
+  let newTotal = trimmed==='' ? null : parseInt(trimmed);
+  if(trimmed!=='' && (isNaN(newTotal) || newTotal<1)){ showToast('Nombre invalide'); return; }
+  try{
+    await sbPatch('collections', `?id=eq.${collId}`, { set_total: newTotal });
+    coll.set_total = newTotal; // maj locale
+    saveToCache();
+    showToast(newTotal ? `✅ Set défini à ${newTotal} cartes` : '✅ Total du set effacé');
+    // Rafraîchir la vue de la collection
+    const bloc=blocs.find(b=>b.id===coll.bloc_id);
+    renderCards(collId, coll.nom, bloc?bloc.id:'', bloc?bloc.nom:'');
+  }catch(e){ showToast('❌ '+e.message); }
 }
 
 // Une carte "dépasse-t-elle" le set ? (numéro > total officiel → carte secrète : V, VMAX, EX, etc.)
