@@ -2355,11 +2355,15 @@ function pickScanCard(carteId){
 }
 
 function renderScanConfirm(card, detected){
-  scanPending=card; scanRarity='c'; scanQty=1;
+  scanPending=card; scanQty=1;
   const coll=collections.find(c=>c.id===card.collection_id);
   const bloc=blocs.find(b=>b.id===coll?.bloc_id);
   const box=document.getElementById('scanResultArea');
-  const rarityBtns=TYPES.map(t=>`<button data-r="${t}" class="${t==='c'?'active':''}" onclick="setScanRarity('${t}')">${t.toUpperCase()}</button>`).join('');
+  // N'afficher que les raretés présentes dans cette collection (c/r toujours, p/m selon la collection)
+  const availTypes=TYPES.filter(t=>collectionHasRarete(card.id, t));
+  // Rareté par défaut = première disponible (Commune en pratique)
+  scanRarity = availTypes.includes('c') ? 'c' : (availTypes[0]||'c');
+  const rarityBtns=availTypes.map(t=>`<button data-r="${t}" class="${t===scanRarity?'active':''}" onclick="setScanRarity('${t}')">${t.toUpperCase()}</button>`).join('');
   box.innerHTML=`<div class="scan-result">
     ${detected?`<div class="sr-detected">${esc(detected)}</div>`:''}
     <div class="sr-card">
