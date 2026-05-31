@@ -1959,25 +1959,66 @@ async function runScanOCR(srcCanvas){
   return bestText;
 }
 
+// Chiffres facilement confondus par l'OCR (pour tolérer les erreurs de lecture)
+const OCR_DIGIT_CONFUSIONS={'0':['8','6','9'],'1':['7'],'7':['1'],'8':['0','6','3'],'6':['8','5','0'],'5':['6','3'],'3':['8','5'],'9':['0'],'2':['7']};
+// Deux numéros sont-ils "proches" (1 chiffre de différence dû à l'OCR) ?
+function numProche(a,b){
+  if(a===b) return true;
+  if(Math.abs(String(a).length-String(b).length)>0) {
+    // comparer en normalisant les zéros initiaux
+    if(parseInt(a)===parseInt(b)) return true;
+  }
+  const sa=String(a), sb=String(b);
+  if(sa.length!==sb.length) return false;
+  let diff=0;
+  for(let i=0;i<sa.length;i++){
+    if(sa[i]!==sb[i]){
+      diff++;
+      const conf=OCR_DIGIT_CONFUSIONS[sa[i]]||[];
+      if(!conf.includes(sb[i])) return false; // différence non explicable par l'OCR
+    }
+  }
+  return diff<=1;
+}
+
 function handleScanText(rawText){
   const text=rawText.replace(/\s+/g,' ').trim();
   const numMatch=text.match(/(\d{1,3})\s*\/\s*(\d{1,3})/);
-  let candidates=[]; let detected='';
-  if(numMatch){
-    const num=parseInt(numMatch[1]); const tot=parseInt(numMatch[2]);
-    detected=`N° détecté : ${numMatch[1]}/${numMatch[2]}`;
-    candidates=cartes.filter(c=>{ const m=(c.numero||'').match(/(\d{1,3})/); return m && parseInt(m[1])===num; });
-    const exact=candidates.filter(c=>{ const m=(c.numero||'').match(/\/\s*(\d{1,3})/); return m && parseInt(m[1])===tot; });
-    if(exact.length) candidates=exact;
-  }
-  if(!numMatch || candidates.length>1){
-    const words=text.toLowerCase().match(/[a-zàâäéèêëïîôöùûüç]{4,}/g)||[];
-    if(words.length){
-      const base=candidates.length?candidates:cartes;
-      const byName=base.filter(c=>{ const nom=(c.nom||'').toLowerCase(); return words.some(w=>nom.includes(w)); });
-      if(byName.length){ candidates=byName; if(!detected) detected='Nom détecté'; }
+  let detected='';
+  const num = numMatch ? parseInt(numMatch[1]) : null;
+  const tot = numMatch ? parseInt(numMatch[2]) : null;
+  if(numMatch) detected=`N° détecté : ${numMatch[1]}/${numMatch[2]}`;
+
+  // Mots du nom lus par l'OCR (≥4 lettres)
+  const words=text.toLowerCase().match(/[a-zàâäéèêëïîôöùûüç]{4,}/g)||[];
+
+  // Score chaque carte : numéro exact (100) > numéro du set aussi (150) > numéro proche (40) > nom (par mot +15)
+  const scored=cartes.map(c=>{
+    let score=0;
+    const mNum=(c.numero||'').match(/(\d{1,3})/);
+    const mTot=(c.numero||'').match(/\/\s*(\d{1,3})/);
+    const cNum=mNum?parseInt(mNum[1]):null;
+    const cTot=mTot?parseInt(mTot[1]):null;
+    if(num!=null && cNum!=null){
+      if(cNum===num){
+        score+=100;
+        if(tot!=null && cTot!=null && cTot===tot) score+=60; // total du set identique = très probable
+      } else if(numProche(cNum,num)){
+        score+=40; // numéro proche (tolérance OCR)
+        if(tot!=null && cTot!=null && cTot===tot) score+=30;
+      }
     }
-  }
+    if(words.length){
+      const nom=(c.nom||'').toLowerCase();
+      words.forEach(w=>{ if(nom.includes(w)) score+=15; });
+    }
+    return {c,score};
+  }).filter(x=>x.score>0);
+
+  scored.sort((a,b)=>b.score-a.score);
+  const candidates=scored.map(x=>x.c);
+
+  if(!detected && words.length) detected='Nom détecté';
   showScanResult(candidates, detected);
 }
 
@@ -1988,18 +2029,21 @@ function showScanResult(candidates, detected){
   if(!candidates || candidates.length===0){
     box.innerHTML=`<div class="scan-result">
       <div class="sr-detected">${esc(detected||'Aucun texte exploitable')}</div>
-      <p style="font-size:14px;font-weight:700;margin-bottom:8px;">😕 Aucune carte trouvée</p>
-      <p style="font-size:12px;color:var(--text2);margin-bottom:14px;">Rapproche-toi du numéro (ex. 042/198) et assure-toi qu'il est net.</p>
+      <p style="font-size:14px;font-weight:700;margin-bottom:8px;">😕 Aucune carte reconnue automatiquement</p>
+      <p style="font-size:12px;color:var(--text2);margin-bottom:10px;">Cherche-la manuellement ci-dessous, ou réessaie avec une photo plus nette.</p>
+      <input id="scanManualSearch" type="text" placeholder="Nom ou numéro de la carte…" oninput="scanManualSearch(this.value)"
+        style="width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px;margin-bottom:8px;">
+      <div class="sr-choices" id="scanManualResults"></div>
       <div class="sr-actions"><button class="sr-retry" onclick="retryScan()">↻ Réessayer</button></div></div>`;
     box.scrollIntoView({behavior:'smooth'});
     return;
   }
   if(candidates.length===1){ renderScanConfirm(candidates[0], detected); return; }
   box.innerHTML=`<div class="scan-result">
-    <div class="sr-detected">${esc(detected||'')} · ${candidates.length} cartes possibles</div>
+    <div class="sr-detected">${esc(detected||'')} · ${candidates.length} carte(s) possible(s)</div>
     <p style="font-size:14px;font-weight:800;margin-bottom:10px;">Laquelle est-ce ?</p>
     <div class="sr-choices">
-      ${candidates.slice(0,8).map(c=>{
+      ${candidates.slice(0,15).map(c=>{
         const coll=collections.find(x=>x.id===c.collection_id);
         return `<div class="sr-choice" onclick='pickScanCard("${c.id}")'>
           <img src="${esc(optImg(c.image))}" loading="lazy">
@@ -2009,8 +2053,34 @@ function showScanResult(candidates, detected){
           </div></div>`;
       }).join('')}
     </div>
+    <p style="font-size:12px;color:var(--text2);font-weight:600;margin:4px 0 8px;">Pas dans la liste ? Cherche-la :</p>
+    <input id="scanManualSearch" type="text" placeholder="Nom ou numéro de la carte…" oninput="scanManualSearch(this.value)"
+      style="width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px;margin-bottom:8px;">
+    <div class="sr-choices" id="scanManualResults"></div>
     <div class="sr-actions"><button class="sr-retry" onclick="retryScan()">↻ Réessayer</button></div></div>`;
   box.scrollIntoView({behavior:'smooth'});
+}
+
+// Recherche manuelle dans toute la base (repli si la bonne carte n'est pas proposée)
+function scanManualSearch(q){
+  const res=document.getElementById('scanManualResults');
+  if(!res) return;
+  q=(q||'').trim().toLowerCase();
+  if(q.length<2){ res.innerHTML=''; return; }
+  const found=cartes.filter(c=>{
+    const nom=(c.nom||'').toLowerCase();
+    const numero=(c.numero||'').toLowerCase();
+    return nom.includes(q) || numero.includes(q);
+  }).slice(0,15);
+  res.innerHTML=found.map(c=>{
+    const coll=collections.find(x=>x.id===c.collection_id);
+    return `<div class="sr-choice" onclick='pickScanCard("${c.id}")'>
+      <img src="${esc(optImg(c.image))}" loading="lazy">
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:13px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(c.nom)}</div>
+        <div style="font-size:11px;color:var(--text2);">${esc(coll?.nom||'')} · n°${esc(c.numero||'')}</div>
+      </div></div>`;
+  }).join('') || '<div style="font-size:12px;color:var(--text2);padding:6px;">Aucun résultat</div>';
 }
 
 function pickScanCard(carteId){
