@@ -2028,6 +2028,16 @@ async function runScanOCR(srcCanvas, fast){
         for(let i=0;i<d.length;i+=4){ sum+=0.299*d[i]+0.587*d[i+1]+0.114*d[i+2]; }
         const thr=sum/n;
         for(let i=0;i<d.length;i+=4){ const g=0.299*d[i]+0.587*d[i+1]+0.114*d[i+2]; const v=g>thr?0:255; d[i]=d[i+1]=d[i+2]=v; }
+      } else if(mode==='darktext'){
+        // Isole le texte SOMBRE sur fond clair/brillant (numéro noir sur bande argentée) : neutralise les reflets
+        // 1) niveaux de gris, 2) on ne garde que les pixels franchement foncés
+        const g0=new Float32Array(c.width*c.height);
+        let mn=255, mx=0;
+        for(let i=0,p=0;i<d.length;i+=4,p++){ const g=0.299*d[i]+0.587*d[i+1]+0.114*d[i+2]; g0[p]=g; if(g<mn)mn=g; if(g>mx)mx=g; }
+        const range=Math.max(1,mx-mn);
+        // seuil bas : on garde le quart le plus sombre comme "texte"
+        const thr=mn+range*0.42;
+        for(let i=0,p=0;i<d.length;i+=4,p++){ const v=g0[p]<thr?0:255; d[i]=d[i+1]=d[i+2]=v; }
       } else if(mode==='adaptive' || mode==='adaptive-inv'){
         // Seuillage adaptatif local : idéal pour fonds très colorés/brillants (ex, holo, reverse)
         const w=c.width, h=c.height;
@@ -2075,17 +2085,22 @@ async function runScanOCR(srcCanvas, fast){
 
   // Séquence courte pour le mode rapide, complète sinon
   const sequence = fast ? [
+    [rNum,  'darktext'],
     [rNum,  'binary'],
     [rNum,  'adaptive'],
+    [rTight,'darktext'],
     [rTight,'binary'],
     [rTight,'adaptive'],
-    [rWide, 'binary'],
+    [rWide, 'darktext'],
     [rNum,  'adaptive-inv']
   ] : [
+    [rNum,  'darktext'],
     [rNum,  'binary'],
     [rNum,  'adaptive'],
+    [rTight,'darktext'],
     [rTight,'binary'],
     [rTight,'adaptive'],
+    [rWide, 'darktext'],
     [rWide, 'binary'],
     [rWide, 'adaptive'],
     [rNum,  'adaptive-inv'],
