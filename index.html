@@ -254,6 +254,8 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--text);heig
 .sr-add{background:#10b981;color:#fff}
 .sr-retry{background:var(--surface2);color:var(--text)}
 .sr-detected{font-size:11px;color:var(--text2);font-weight:600;margin-bottom:10px;font-family:'Space Mono',monospace}
+.sr-recap{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:10px 0;padding:10px 12px;border-radius:10px;background:var(--surface2)}
+.sr-recap-chip{display:inline-flex;align-items:center;gap:5px;font-size:13px;font-weight:800;font-family:'Space Mono',monospace}
 .sr-choices{display:flex;flex-direction:column;gap:6px;margin-bottom:12px}
 .sr-choice{display:flex;gap:10px;align-items:center;padding:8px;border-radius:10px;border:1px solid var(--border);background:var(--bg);cursor:pointer}
 .sr-choice:hover{border-color:var(--accent)}
@@ -2344,6 +2346,7 @@ function renderScanConfirm(card, detected){
         <div class="sr-meta">${esc(coll?.nom||'')} · ${esc(bloc?.nom||'')} · n°${esc(card.numero||'')}</div>
       </div>
     </div>
+    <div id="srRecap"></div>
     <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:6px;">Rareté</div>
     <div class="sr-rarity" id="srRarity">${rarityBtns}</div>
     <div style="font-size:12px;font-weight:700;color:var(--text2);margin:12px 0 6px;">Nombre d'exemplaires</div>
@@ -2354,10 +2357,26 @@ function renderScanConfirm(card, detected){
       <button class="sr-qty-btn" onclick="changeScanQty(1)">＋</button>
     </div>
     <div class="sr-actions">
-      <button class="sr-retry" onclick="retryScan()">↻ Re-scanner</button>
-      <button class="sr-add" onclick="confirmScanAdd()">＋ Ajouter</button>
+      <button class="sr-add" onclick="confirmScanAdd()">＋ Ajouter cette rareté</button>
+    </div>
+    <div class="sr-actions" style="margin-top:8px;">
+      <button class="sr-retry" onclick="retryScan()">📷 Carte suivante</button>
     </div></div>`;
+  updateScanRecap(card.id);
   box.scrollIntoView({behavior:'smooth'});
+}
+
+// Affiche le récapitulatif des quantités possédées (par rareté) pour la carte en cours
+function updateScanRecap(carteId){
+  const recap=document.getElementById('srRecap');
+  if(!recap) return;
+  const parts=TYPES.map(t=>{
+    const q=getQuantite(carteId, currentUser, t);
+    return q>0 ? `<span class="sr-recap-chip"><span class="badge badge-${t}">${t.toUpperCase()}</span> ${q}</span>` : '';
+  }).filter(Boolean);
+  recap.innerHTML = parts.length
+    ? `<div class="sr-recap"><span style="font-size:11px;color:var(--text2);font-weight:700;">Déjà dans ta collection :</span> ${parts.join('')}</div>`
+    : '';
 }
 
 function setScanRarity(t){
@@ -2388,7 +2407,11 @@ async function confirmScanAdd(){
   // APPRENTISSAGE : retenir que ce texte OCR correspond à cette carte (pour les prochains scans)
   if(lastScanOcr) learnScan(lastScanOcr, card.id);
   showToast(`✅ ${card.nom} (${rarete.toUpperCase()}) +${qty} — tu en as ${newQty}`);
-  retryScan();
+  // Rester sur la carte pour pouvoir ajouter une autre rareté : on met à jour le récap et on réinitialise la quantité
+  updateScanRecap(card.id);
+  scanQty=1;
+  const input=document.getElementById('srQtyInput');
+  if(input) input.value=1;
 }
 
 function retryScan(){
