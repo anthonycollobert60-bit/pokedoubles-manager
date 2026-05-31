@@ -1703,8 +1703,8 @@ async function getOcrWorker(){
   ocrWorkerPromise=(async()=>{
     const w=await Tesseract.createWorker('eng');
     await w.setParameters({
-      tessedit_char_whitelist:'0123456789/',          // on ne lit que le numéro → bien plus rapide et précis
-      tessedit_pageseg_mode:'7'                        // PSM 7 : traiter l'image comme une seule ligne de texte
+      tessedit_char_whitelist:'0123456789/',          // on ne lit que le numéro
+      tessedit_pageseg_mode:'11'                       // PSM 11 : texte épars, trouve les chiffres où qu'ils soient
     });
     ocrWorker=w;
     return w;
@@ -2107,7 +2107,8 @@ function handleScanText(rawText){
     // afficher toute la collection triée par numéro pour une sélection manuelle rapide.
     if(num==null){
       const sorted=[...pool].sort((a,b)=>cardOrderNum(a.numero)-cardOrderNum(b.numero));
-      showScanResult(sorted, (detected||'')+' · numéro illisible, choisis la carte');
+      const lu = text ? `OCR a lu : "${text.slice(0,40)}"` : 'OCR : rien lu';
+      showScanResult(sorted, (detected||'')+' · numéro illisible ('+lu+'), choisis la carte');
       return;
     }
   }
