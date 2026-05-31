@@ -1011,7 +1011,10 @@ function fillModal(carteId){
   if(!card) return;
   currentCardId=carteId;
   document.getElementById('modalTitle').textContent=card.nom||'';
-  document.getElementById('modalSub').textContent=card.numero||'';
+  // DIAGNOSTIC TEMPORAIRE : total du set + carte secrète ?
+  const _tot=collectionSetTotal(card.collection_id);
+  const _exceeds=cardExceedsSet(card);
+  document.getElementById('modalSub').textContent=(card.numero||'')+`  [total set:${_tot} · secrète:${_exceeds?'OUI':'non'}]`;
   document.getElementById('modalImg').src=optImg(card.image);
   renderModalQty(carteId);
 
