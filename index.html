@@ -1963,6 +1963,31 @@ async function runScanOCR(srcCanvas){
         for(let i=0;i<d.length;i+=4){ sum+=0.299*d[i]+0.587*d[i+1]+0.114*d[i+2]; }
         const thr=sum/n;
         for(let i=0;i<d.length;i+=4){ const g=0.299*d[i]+0.587*d[i+1]+0.114*d[i+2]; const v=g>thr?0:255; d[i]=d[i+1]=d[i+2]=v; }
+      } else if(mode==='adaptive' || mode==='adaptive-inv'){
+        // Seuillage adaptatif local : idéal pour fonds très colorés/brillants (ex, holo, reverse)
+        const w=c.width, h=c.height;
+        // Convertir en niveaux de gris (tableau)
+        const gray=new Float32Array(w*h);
+        for(let i=0,p=0;i<d.length;i+=4,p++){ gray[p]=0.299*d[i]+0.587*d[i+1]+0.114*d[i+2]; }
+        // Image intégrale pour moyenne locale rapide
+        const integ=new Float32Array((w+1)*(h+1));
+        for(let y=1;y<=h;y++){ let rs=0; for(let x=1;x<=w;x++){ rs+=gray[(y-1)*w+(x-1)]; integ[y*(w+1)+x]=integ[(y-1)*(w+1)+x]+rs; } }
+        const rad=Math.max(8, Math.floor(Math.min(w,h)/16)); // rayon de la fenêtre
+        const C=10; // marge
+        const inv=(mode==='adaptive-inv');
+        for(let y=0;y<h;y++){
+          for(let x=0;x<w;x++){
+            const x1=Math.max(0,x-rad), y1=Math.max(0,y-rad), x2=Math.min(w-1,x+rad), y2=Math.min(h-1,y+rad);
+            const cnt=(x2-x1+1)*(y2-y1+1);
+            const s=integ[(y2+1)*(w+1)+(x2+1)]-integ[(y1)*(w+1)+(x2+1)]-integ[(y2+1)*(w+1)+(x1)]+integ[(y1)*(w+1)+(x1)];
+            const mean=s/cnt;
+            const g=gray[y*w+x];
+            let v=(g < mean-C) ? 0 : 255;
+            if(inv) v=255-v;
+            const idx=(y*w+x)*4;
+            d[idx]=d[idx+1]=d[idx+2]=v;
+          }
+        }
       }
       ctx.putImageData(img,0,0);
     }catch(e){}
@@ -1976,10 +2001,12 @@ async function runScanOCR(srcCanvas){
 
   // ── Lire UNIQUEMENT le NUMÉRO (bas de la carte) — rapide et fiable ──
   const numRegions=[
-    {x:0.0, y:0.78, w:0.6, h:0.22},   // coin bas-gauche (numéro type 001/086)
-    {x:0.0, y:0.72, w:1.0, h:0.28}    // bande basse complète
+    {x:0.02, y:0.88, w:0.45, h:0.11}, // coin bas-gauche resserré (numéro type 015/086)
+    {x:0.0,  y:0.78, w:0.6,  h:0.22}, // coin bas-gauche large
+    {x:0.0,  y:0.72, w:1.0,  h:0.28}  // bande basse complète
   ];
-  const modes=['contrast','binary','invert'];
+  // Modes ordonnés : les plus efficaces d'abord, l'adaptatif pour les cartes brillantes
+  const modes=['contrast','binary','adaptive','invert','adaptive-inv'];
   let numText='';
   for(const region of numRegions){
     for(const mode of modes){
@@ -2026,6 +2053,14 @@ function handleScanText(rawText){
   if(scanCollFilter){
     const coll=collections.find(c=>c.id===scanCollFilter);
     if(coll) detected=(detected?detected+' · ':'')+coll.nom;
+
+    // REPLI cartes brillantes : si le numéro n'a pas pu être lu mais qu'on connaît la collection,
+    // afficher toute la collection triée par numéro pour une sélection manuelle rapide.
+    if(num==null){
+      const sorted=[...pool].sort((a,b)=>cardOrderNum(a.numero)-cardOrderNum(b.numero));
+      showScanResult(sorted, (detected||'')+' · numéro illisible, choisis la carte');
+      return;
+    }
   }
 
   // Mots alphabétiques lus par l'OCR (≥3 lettres) — pour retrouver le nom du Pokémon
