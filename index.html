@@ -1671,24 +1671,18 @@ function renderScan(){
     body.innerHTML='<div class="empty-state"><h3>Accès réservé</h3><p>Connecte-toi pour scanner des cartes.</p></div>';
     return;
   }
-  // Construire les options de collections groupées par bloc
-  const collOptions=blocs.map(b=>{
-    const cs=collections.filter(c=>c.bloc_id===b.id);
-    if(!cs.length) return '';
-    return `<optgroup label="${esc(b.nom)}">`+
-      cs.map(c=>`<option value="${c.id}">${esc(c.nom)}</option>`).join('')+
-      `</optgroup>`;
-  }).join('');
-
   body.innerHTML=`
     <div class="section-title">📷 Scanner une carte</div>
     <div style="margin-bottom:14px;">
       <label style="display:block;font-size:12px;font-weight:700;color:var(--text2);margin-bottom:6px;">Collection à scanner</label>
-      <select id="scanCollSelect" onchange="onScanCollChange()"
-        style="width:100%;padding:11px 12px;border-radius:12px;border:1.5px solid var(--border);background:var(--bg);color:var(--text);font-size:14px;font-weight:600;">
-        <option value="">— Toutes les collections —</option>
-        ${collOptions}
-      </select>
+      <div style="position:relative;">
+        <input id="scanCollInput" type="text" autocomplete="off" placeholder="Rechercher une collection…"
+          oninput="onScanCollInput(this.value)" onfocus="onScanCollInput(this.value)"
+          style="width:100%;padding:11px 38px 11px 12px;border-radius:12px;border:1.5px solid var(--border);background:var(--bg);color:var(--text);font-size:14px;font-weight:600;">
+        <button id="scanCollClear" onclick="clearScanColl()" title="Effacer"
+          style="display:none;position:absolute;right:8px;top:50%;transform:translateY(-50%);width:24px;height:24px;border:none;border-radius:50%;background:var(--surface2);color:var(--text);cursor:pointer;font-size:14px;line-height:1;">✕</button>
+        <div id="scanCollList" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:20;max-height:240px;overflow-y:auto;background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,0.3);"></div>
+      </div>
       <p style="font-size:11px;color:var(--text2);margin-top:6px;">Choisis le set de ta carte pour un scan fiable (recommandé).</p>
     </div>
     <div class="scan-cam-wrap" id="scanCamWrap">
@@ -1717,10 +1711,50 @@ function renderScan(){
   }catch(e){}
 }
 
-// Mémorise la collection choisie pour le scan
-function onScanCollChange(){
-  const sel=document.getElementById('scanCollSelect');
-  scanCollFilter=sel?sel.value:'';
+// Recherche/filtre des collections (groupées par bloc) dans le champ du scan
+function onScanCollInput(q){
+  q=(q||'').trim().toLowerCase();
+  const list=document.getElementById('scanCollList');
+  const clearBtn=document.getElementById('scanCollClear');
+  if(clearBtn) clearBtn.style.display = q ? '' : 'none';
+  // Tant qu'on tape, on n'a pas de filtre actif validé
+  scanCollFilter='';
+  if(!list) return;
+  // Construire les résultats groupés par bloc
+  let html='';
+  blocs.forEach(b=>{
+    const cs=collections.filter(c=>c.bloc_id===b.id &&
+      (!q || (c.nom||'').toLowerCase().includes(q) || (b.nom||'').toLowerCase().includes(q)));
+    if(!cs.length) return;
+    html+=`<div style="padding:6px 12px;font-size:11px;font-weight:800;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;">${esc(b.nom)}</div>`;
+    html+=cs.map(c=>`<div onclick='pickScanColl("${c.id}")' style="padding:10px 12px;cursor:pointer;font-size:14px;font-weight:600;border-top:1px solid var(--border);">${esc(c.nom)}</div>`).join('');
+  });
+  list.innerHTML = html || '<div style="padding:12px;font-size:13px;color:var(--text2);">Aucune collection</div>';
+  list.style.display='block';
+}
+
+// Sélectionne une collection
+function pickScanColl(collId){
+  const coll=collections.find(c=>c.id===collId);
+  if(!coll) return;
+  scanCollFilter=collId;
+  const input=document.getElementById('scanCollInput');
+  if(input) input.value=coll.nom;
+  const list=document.getElementById('scanCollList');
+  if(list) list.style.display='none';
+  const clearBtn=document.getElementById('scanCollClear');
+  if(clearBtn) clearBtn.style.display='';
+}
+
+// Vide la sélection (croix)
+function clearScanColl(){
+  scanCollFilter='';
+  const input=document.getElementById('scanCollInput');
+  if(input){ input.value=''; input.focus(); }
+  const clearBtn=document.getElementById('scanCollClear');
+  if(clearBtn) clearBtn.style.display='none';
+  const list=document.getElementById('scanCollList');
+  if(list) list.style.display='none';
 }
 
 async function startScanCam(){
@@ -1907,37 +1941,21 @@ async function runScanOCR(srcCanvas){
     }catch(e){ return ''; }
   }
 
-  // ── A) Lire le NUMÉRO (bas de la carte) ──
+  // ── Lire UNIQUEMENT le NUMÉRO (bas de la carte) — rapide et fiable ──
   const numRegions=[
     {x:0.0, y:0.78, w:0.6, h:0.22},   // coin bas-gauche (numéro type 001/086)
     {x:0.0, y:0.72, w:1.0, h:0.28}    // bande basse complète
   ];
-  const modes=['contrast','binary','invert','gray'];
+  const modes=['contrast','binary','invert'];
   let numText='';
   for(const region of numRegions){
     for(const mode of modes){
       const t=await pass(region, mode);
-      if(/\d{1,3}\s*\/\s*\d{1,3}/.test(t)){ numText=t; break; } // numéro complet trouvé
+      if(/\d{1,3}\s*\/\s*\d{1,3}/.test(t)){ return t; } // numéro complet trouvé → on s'arrête tout de suite
       if(t.length>numText.length) numText=t;
     }
-    if(/\d{1,3}\s*\/\s*\d{1,3}/.test(numText)) break;
   }
-
-  // ── B) Lire le NOM (haut de la carte) ──
-  const nameRegion={x:0.05, y:0.04, w:0.9, h:0.13}; // bandeau du nom en haut
-  let nameText='';
-  for(const mode of ['contrast','gray','binary']){
-    const t=await pass(nameRegion, mode);
-    if(t.trim().length>nameText.trim().length) nameText=t;
-  }
-
-  // ── C) Combiner nom + numéro pour le scoring (nom + numéro = fiabilité maximale) ──
-  let combined=(nameText+' '+numText).trim();
-  // Repli : si rien d'exploitable, OCR de l'image entière
-  if(combined.replace(/\s/g,'').length<3){
-    combined=await pass({x:0,y:0,w:1,h:1}, 'contrast');
-  }
-  return combined;
+  return numText;
 }
 
 // Chiffres facilement confondus par l'OCR (pour tolérer les erreurs de lecture)
