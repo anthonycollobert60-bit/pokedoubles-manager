@@ -422,6 +422,7 @@ const TCGDEX   = 'https://api.tcgdex.net/v2/fr';
 
 /* ══ STATE ═════════════════════════════════════════════ */
 let currentUser = null;
+let pendingWrites = 0; // nombre d'écritures de quantité en cours (évite l'écrasement par le refresh auto)
 let selectedUser = null;
 let activeTab = 'collection';
 let currentBlocId = null;
@@ -939,6 +940,17 @@ function buildBadges(container, carteId, viewOwner){
   }).join('');
 }
 
+// Reconstruit les badges (quantités) de toutes les cartes affichées dans la grille
+function refreshGridBadges(){
+  const viewOwner=currentUser||null;
+  document.querySelectorAll('.poke-card').forEach(el=>{
+    const carteId=el.dataset.id;
+    const row=el.querySelector('.badges-row');
+    if(row) buildBadges(row, carteId, viewOwner);
+  });
+  applyFilters();
+}
+
 function applyFilters(){
   if(!currentCollId) return;
   const q=(document.getElementById('searchAll').value||'').toLowerCase();
@@ -1120,6 +1132,7 @@ async function changeQty(carteId, joueur, rarete, delta){
   // Re-render toute la modal pour recalculer l'affichage (ajout/suppression changent la structure)
   if(currentCardId===carteId) renderModalQty(carteId);
   // Sauvegarder dans Supabase : upsert via POST avec on_conflict
+  pendingWrites++;
   try {
     const existing=quantites.find(x=>x.carte_id===carteId && x.joueur===joueur && x.rarete===rarete && x.id);
     if(existing) {
@@ -1141,7 +1154,11 @@ async function changeQty(carteId, joueur, rarete, delta){
     if(idx2>=0) quantites[idx2].quantite=cur;
     updateQuantiteIndex(carteId, joueur, rarete, cur);
     if(el) el.textContent=cur;
+    pendingWrites=Math.max(0,pendingWrites-1);
+    return cur; // rollback : on renvoie l'ancienne valeur
   }
+  pendingWrites=Math.max(0,pendingWrites-1);
+  return next; // nouvelle quantité après modification
 }
 
 // Met à jour une seule ligne qty (appelé après changeQty)
@@ -2199,9 +2216,9 @@ function setScanRarity(t){
 async function confirmScanAdd(){
   if(!scanPending || !currentUser) return;
   const card=scanPending;
-  await changeQty(card.id, currentUser, scanRarity, +1);
-  const newQty=getQuantite(card.id, currentUser, scanRarity);
-  showToast(`✅ ${card.nom} (${scanRarity.toUpperCase()}) — tu en as ${newQty}`);
+  const rarete=scanRarity;
+  const newQty=await changeQty(card.id, currentUser, rarete, +1);
+  showToast(`✅ ${card.nom} (${rarete.toUpperCase()}) — tu en as ${newQty}`);
   retryScan();
 }
 
@@ -2264,12 +2281,15 @@ function doGlobalSearch(){
 
 /* ══ AUTO REFRESH ══════════════════════════════════════ */
 setInterval(async ()=>{
+  // Ne pas rafraîchir pendant qu'une modification locale est en cours d'enregistrement
+  if(pendingWrites>0) return;
   try {
     const newQty=await sbGet('quantites','?select=*');
+    if(pendingWrites>0) return; // une écriture a démarré entre-temps
     quantites=newQty;
     buildQuantitesIndex();
-    if(currentCollId) applyFilters();
-    if(activeTab==='stock') renderStock();
+    if(currentCollId) refreshGridBadges();
+    if(activeTab==='stock'){ stockDirty=false; renderStock(); }
   } catch(e) {}
 }, 30000);
 </script>
