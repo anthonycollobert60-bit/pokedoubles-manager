@@ -1749,39 +1749,35 @@ async function loadScanLearning(){
   }catch(e){ scanLearning={}; }
 }
 
-// Cherche une carte apprise à partir du texte OCR (essaie tous les numéros candidats)
-function findLearned(rawText){
-  const nums=ocrCandidateNumbers(rawText);
-  let best=null;
-  for(const n of nums){
-    const k=makeNumKey(n);
-    const e=scanLearning[k];
-    if(e && (!best || (e.hits||1)>(best.hits||1))) best=e;
-  }
-  return best;
+// Cherche une carte apprise pour un numéro précis (le numéro principal détecté)
+function findLearnedByNum(num){
+  if(num==null) return null;
+  const e=scanLearning[makeNumKey(num)];
+  return e || null;
 }
 
-// Enregistre/renforce les associations (numéro lu → carte) pour TOUS les numéros candidats lus
+// Enregistre l'association : le VRAI numéro de la carte → la carte.
+// On n'apprend PAS les numéros parasites lus par l'OCR (sinon une carte "pollue" les scans suivants).
 async function learnScan(rawText, carteId){
-  let nums=ocrCandidateNumbers(rawText);
-  // Toujours apprendre aussi le vrai numéro de la carte (au cas où l'OCR ne l'a pas lu cette fois)
   const card=cartes.find(c=>c.id===carteId);
-  if(card){ const mm=(card.numero||'').match(/(\d{1,3})/); if(mm){ const realN=parseInt(mm[1]); if(realN>0 && !nums.includes(realN)) nums.push(realN); } }
-  if(!nums.length) return;
-  for(const n of nums){
-    const key=makeNumKey(n);
-    const cur=scanLearning[key];
-    if(cur && cur.carte_id===carteId){ cur.hits=(cur.hits||1)+1; }
-    else { scanLearning[key]={carte_id:carteId, hits:1}; }
-    const hits=scanLearning[key].hits;
-    try{
-      await sb('scan_learning?on_conflict=ocr_key', {
-        method:'POST',
-        prefer:'resolution=merge-duplicates,return=minimal',
-        body: JSON.stringify({ ocr_key:key, carte_id:carteId, hits, updated_at:new Date().toISOString() })
-      });
-    }catch(e){ /* silencieux */ }
-  }
+  if(!card) return;
+  const mm=(card.numero||'').match(/(\d{1,3})/);
+  if(!mm) return;
+  const realN=parseInt(mm[1]);
+  if(!(realN>0)) return;
+  const key=makeNumKey(realN);
+  const cur=scanLearning[key];
+  // Si ce numéro était associé à une AUTRE carte, on écrase (la dernière correction fait foi)
+  if(cur && cur.carte_id===carteId){ cur.hits=(cur.hits||1)+1; }
+  else { scanLearning[key]={carte_id:carteId, hits:1}; }
+  const hits=scanLearning[key].hits;
+  try{
+    await sb('scan_learning?on_conflict=ocr_key', {
+      method:'POST',
+      prefer:'resolution=merge-duplicates,return=minimal',
+      body: JSON.stringify({ ocr_key:key, carte_id:carteId, hits, updated_at:new Date().toISOString() })
+    });
+  }catch(e){ /* silencieux */ }
 }
 
 // Rendu de l'onglet Scan
@@ -2176,17 +2172,6 @@ function handleScanText(rawText){
   const text=rawText.replace(/\s+/g,' ').trim();
   lastScanOcr=rawText||''; // mémoriser pour l'apprentissage à la confirmation
 
-  // 1) APPRENTISSAGE : si un numéro lu correspond à une carte déjà apprise, la proposer en priorité
-  const learned=findLearned(rawText);
-  if(learned){
-    const c=cartes.find(x=>x.id===learned.carte_id);
-    if(c){
-      // On affiche directement la confirmation de la carte apprise
-      renderScanConfirm(c, '✨ Carte reconnue (apprise)');
-      return;
-    }
-  }
-
   const numMatch=text.match(/(\d{1,3})\s*\/\s*(\d{1,3})/);
   let detected='';
   let num = (numMatch && parseInt(numMatch[1])>0) ? parseInt(numMatch[1]) : null;
@@ -2197,6 +2182,15 @@ function handleScanText(rawText){
     // Mode rapide : prendre le premier nombre VALIDE (>0), pas "000"
     const allNums=(text.match(/\d{1,3}/g)||[]).map(n=>parseInt(n)).filter(n=>n>0 && n<1000);
     if(allNums.length){ num=allNums[0]; detected=`N° détecté : ${num}`; }
+  }
+
+  // APPRENTISSAGE : si le numéro détecté correspond à une carte déjà apprise (dans cette collection), la proposer directement
+  if(num!=null && scanCollFilter){
+    const learned=findLearnedByNum(num);
+    if(learned){
+      const c=cartes.find(x=>x.id===learned.carte_id && x.collection_id===scanCollFilter);
+      if(c){ renderScanConfirm(c, '✨ Carte reconnue (apprise)'); return; }
+    }
   }
 
   // Restreindre la recherche à la collection choisie (scan fiable)
