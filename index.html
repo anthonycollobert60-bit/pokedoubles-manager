@@ -1156,6 +1156,16 @@ async function setCollectionTotal(collId){
   }catch(e){ showToast('❌ '+e.message); }
 }
 
+// Détecte les cartes spéciales (V, VMAX, VSTAR, EX, GX...) qui n'ont que la rareté Commune.
+// On se base sur le nom de la carte (suffixe V / VMAX / VSTAR / ex / GX).
+function cardIsSpecial(carte){
+  if(!carte) return false;
+  const nom=(carte.nom||'').trim();
+  // Mots/suffixes caractéristiques en fin de nom (insensible à la casse)
+  // ex: "Pikachu V", "Dracaufeu VMAX", "Mewtwo VSTAR", "Méga-Némélios ex", "Rayquaza GX"
+  return /(\bV\b|\bVMAX\b|\bVSTAR\b|\bGX\b|\bEX\b|\bex\b)\s*$/.test(nom);
+}
+
 // Une carte "dépasse-t-elle" le set ? (numéro > total officiel → carte secrète : V, VMAX, EX, etc.)
 function cardExceedsSet(carte){
   if(!carte) return false;
@@ -1171,11 +1181,15 @@ function collectionHasRarete(carteId, rarete){
   if(!carte) return true; // par sécurité
   const coll=collections.find(c=>c.id===carte.collection_id);
   if(!coll) return true;
-  // Les cartes au-delà du total du set (secrètes : V, VMAX, EX…) n'ont pas de version Reverse
-  if(rarete==='r' && cardExceedsSet(carte)) return false;
+  // La Commune est toujours disponible
+  if(rarete==='c') return true;
+  // Cartes secrètes (numéro > total du set) ou cartes spéciales (V/VMAX/EX…) : UNIQUEMENT Commune
+  if(cardExceedsSet(carte) || cardIsSpecial(carte)) return false;
+  // Sinon : Reverse toujours, Pokéball/Masterball selon la collection
+  if(rarete==='r') return true;
   if(rarete==='p') return coll.has_pokeball===true;
   if(rarete==='m') return coll.has_masterball===true;
-  return true; // c (et r si dans le set) toujours disponibles
+  return true;
 }
 
 function chooseRareteToAdd(carteId, joueur){
