@@ -147,6 +147,37 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--text);heig
 .modal-nav:active{background:var(--accent);color:#fff}
 .modal-nav.prev{left:0}
 .modal-nav.next{right:0}
+/* Mode vente */
+.vente-wrap{padding-bottom:80px}
+.vente-head{margin-bottom:14px}
+.vente-total-box{background:linear-gradient(135deg,var(--accent),var(--accent2));border-radius:16px;padding:16px 18px;color:#fff;text-align:center}
+.vente-total-label{font-size:13px;font-weight:700;opacity:0.95}
+.vente-total-val{font-size:30px;font-weight:900;font-family:'Space Mono',monospace;margin:2px 0}
+.vente-total-sub{font-size:12px;opacity:0.9}
+.vente-list{display:flex;flex-direction:column;gap:8px}
+.vente-card{display:flex;align-items:center;gap:12px;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:10px}
+.vente-card img{width:48px;height:67px;object-fit:cover;border-radius:8px;background:var(--bg);cursor:pointer;flex-shrink:0}
+.vente-info{flex:1;min-width:0}
+.vente-name{font-size:14px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.vente-meta{font-size:11px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.vente-row2{display:flex;align-items:center;gap:10px;margin-top:4px}
+.vente-price{font-size:15px;font-weight:900;color:var(--accent2);font-family:'Space Mono',monospace}
+.vente-stock{font-size:11px;color:var(--text2);font-weight:700}
+.vente-cart-ctrl{display:flex;align-items:center;gap:6px;flex-shrink:0}
+.vente-add{padding:8px 12px;border-radius:10px;border:1.5px solid var(--accent2);background:transparent;color:var(--accent2);font-weight:800;font-size:13px;cursor:pointer;white-space:nowrap}
+.vente-qbtn{width:32px;height:32px;border-radius:8px;border:1.5px solid var(--border);background:var(--bg);color:var(--text);font-size:18px;font-weight:900;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.vente-qnum{min-width:22px;text-align:center;font-weight:900;font-family:'Space Mono',monospace}
+.vente-cartbar{position:fixed;left:50%;transform:translateX(-50%);bottom:16px;width:calc(100% - 32px);max-width:560px;background:var(--accent2);color:#fff;border-radius:14px;padding:14px 18px;display:flex;justify-content:space-between;align-items:center;font-weight:800;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,0.3);z-index:50}
+.vente-cartbar-right{font-family:'Space Mono',monospace}
+.vc-line{display:flex;align-items:center;gap:10px}
+.vc-line img{width:38px;height:53px;object-fit:cover;border-radius:6px;background:var(--bg);flex-shrink:0}
+.vente-rar{display:inline-block;padding:1px 7px;border-radius:6px;font-size:10px;font-weight:800;vertical-align:middle}
+.vente-rar-c{background:rgba(148,163,184,0.18);color:#94a3b8}
+.vente-rar-r{background:rgba(168,85,247,0.18);color:#c084fc}
+.vente-rar-p{background:rgba(239,68,68,0.16);color:#f87171}
+.vente-rar-m{background:rgba(59,130,246,0.16);color:#60a5fa}
+.vente-rar-s{background:rgba(245,158,11,0.18);color:#fbbf24}
+.vente-rar-x{background:rgba(236,72,153,0.16);color:#f472b6}
 .qty-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
 .qty-block{border-radius:var(--r-lg);padding:12px;border:1px solid var(--border)}
 .qty-block.valentin{border-top:2px solid var(--c-valentin)}
@@ -266,6 +297,12 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--text);heig
 .sr-choice:hover{border-color:var(--accent)}
 .sr-choice img{width:36px;height:50px;object-fit:contain;border-radius:4px}
 .price-badge{display:inline-flex;align-items:center;padding:2px 7px;border-radius:100px;background:rgba(16,185,129,0.12);border:1px solid rgba(16,185,129,0.25);color:#10b981;font-size:10px;font-weight:800;font-family:'Space Mono',monospace}
+.price-badge-rev{background:rgba(168,85,247,0.12);border-color:rgba(168,85,247,0.3);color:#c084fc}
+.modal-price{gap:6px;flex-wrap:wrap}
+.price-slot{display:flex;gap:3px;flex-wrap:wrap;justify-content:center}
+.price-edit-btn{background:none;border:none;cursor:pointer;font-size:14px;padding:2px 4px;opacity:0.6}
+.price-edit-btn:hover{opacity:1}
+.price-manual-tag{font-size:11px;opacity:0.7;align-self:center}
 .modal-price{display:flex;justify-content:center;margin:8px 0 12px;min-height:22px}
 .modal-price.na{display:none}
 
@@ -364,6 +401,7 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--text);heig
   <!-- NAV TABS -->
   <nav class="nav-tabs">
     <button class="nav-tab active" data-tab="collection" id="tabCollection" onclick="switchTab('collection')">Collection</button>
+    <button class="nav-tab" data-tab="vente" id="tabVente" style="display:none;" onclick="switchTab('vente')">🛒 Vente</button>
     <button class="nav-tab" data-tab="scan" id="tabScan" style="display:none;" onclick="switchTab('scan')">📷 Scan</button>
     <button class="nav-tab" data-tab="stock" id="tabStock" onclick="switchTab('stock')">Stock</button>
     <button class="nav-tab" data-tab="admin" id="tabAdmin" style="display:none;" onclick="switchTab('admin')">⚙️ Gérer</button>
@@ -385,6 +423,7 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--text);heig
 
   <!-- BODIES -->
   <div class="app-body" id="appBody"></div>
+  <div class="app-body" id="venteBody" style="display:none;"></div>
   <div class="app-body" id="scanBody" style="display:none;"></div>
   <div class="app-body" id="stockBody" style="display:none;"></div>
   <div class="app-body" id="adminBody" style="display:none;"></div>
@@ -425,6 +464,54 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--text);heig
   <div id="modalOwnersArea"></div>
 </div>
 
+<!-- PANIER DE VENTE -->
+<div class="overlay" id="venteCartOverlay" style="display:none;" onclick="closeVenteCart()"></div>
+<div class="modal" id="venteCartModal" style="display:none;">
+  <div class="modal-header">
+    <div><div class="modal-title">🛒 Panier de vente</div></div>
+    <button class="modal-close" onclick="closeVenteCart()">×</button>
+  </div>
+  <div id="venteCartLines" style="max-height:50vh;overflow-y:auto;display:flex;flex-direction:column;gap:8px;margin-bottom:14px;"></div>
+  <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-top:1px solid var(--border);">
+    <span style="font-size:15px;font-weight:800;">Total</span>
+    <span id="venteCartTotal" style="font-size:22px;font-weight:900;color:var(--accent2);font-family:'Space Mono',monospace;"></span>
+  </div>
+  <button onclick="startVenteCheckout()" style="width:100%;padding:14px;border-radius:12px;border:none;background:var(--accent2);color:#fff;font-weight:900;font-size:15px;cursor:pointer;margin-bottom:8px;">✓ Valider la vente (retirer du stock)</button>
+  <button onclick="clearVenteCart()" style="width:100%;padding:12px;border-radius:12px;border:none;background:var(--surface2);color:var(--text);font-weight:800;cursor:pointer;">Vider le panier</button>
+</div>
+
+<!-- VALIDATION DE VENTE (choix proprio/rareté à retirer) -->
+<div class="overlay" id="venteCheckoutOverlay" style="display:none;" onclick="closeVenteCheckout()"></div>
+<div class="modal" id="venteCheckoutModal" style="display:none;">
+  <div class="modal-header">
+    <div><div class="modal-title">Confirmer la vente</div><div class="modal-sub">Choisis l'exemplaire à retirer</div></div>
+    <button class="modal-close" onclick="closeVenteCheckout()">×</button>
+  </div>
+  <div id="venteCheckoutLines" style="max-height:55vh;overflow-y:auto;display:flex;flex-direction:column;gap:14px;margin-bottom:14px;"></div>
+  <button id="venteCheckoutConfirm" onclick="confirmVenteCheckout()" style="width:100%;padding:14px;border-radius:12px;border:none;background:var(--accent2);color:#fff;font-weight:900;font-size:15px;cursor:pointer;">Confirmer et retirer du stock</button>
+</div>
+
+<!-- ÉDITION MANUELLE DU PRIX (Anthony) -->
+<div class="overlay" id="priceEditOverlay" style="display:none;" onclick="closePriceEdit()"></div>
+<div class="modal" id="priceEditModal" style="display:none;">
+  <div class="modal-header">
+    <div><div class="modal-title">Corriger le prix</div><div class="modal-sub" id="priceEditSub"></div></div>
+    <button class="modal-close" onclick="closePriceEdit()">×</button>
+  </div>
+  <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:14px;">
+    <label style="font-size:13px;font-weight:700;">Prix Commune (€)
+      <input id="priceEditNormal" type="number" step="0.01" min="0" inputmode="decimal" placeholder="ex : 0.03"
+        style="width:100%;margin-top:5px;padding:11px 14px;border-radius:12px;border:1.5px solid var(--border);background:var(--bg);color:var(--text);font-size:15px;">
+    </label>
+    <label style="font-size:13px;font-weight:700;">Prix Reverse (€) <span style="color:var(--text2);font-weight:500;">— laisser vide si pas de reverse</span>
+      <input id="priceEditReverse" type="number" step="0.01" min="0" inputmode="decimal" placeholder="ex : 0.15"
+        style="width:100%;margin-top:5px;padding:11px 14px;border-radius:12px;border:1.5px solid var(--border);background:var(--bg);color:var(--text);font-size:15px;">
+    </label>
+  </div>
+  <button onclick="savePriceEdit()" style="width:100%;padding:14px;border-radius:12px;border:none;background:var(--accent2);color:#fff;font-weight:900;font-size:15px;cursor:pointer;margin-bottom:8px;">Enregistrer le prix</button>
+  <button onclick="resetPriceToApi()" style="width:100%;padding:11px;border-radius:12px;border:none;background:var(--surface2);color:var(--text);font-weight:700;font-size:13px;cursor:pointer;">↻ Revenir au prix automatique</button>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -445,6 +532,9 @@ let currentUser = null;
 let pendingWrites = 0; // nombre d'écritures de quantité en cours (évite l'écrasement par le refresh auto)
 let selectedUser = null;
 let activeTab = 'collection';
+let venteCart = {}; // panier de vente : { carteId: nombre }
+let venteSearch = ''; // filtre de recherche du mode vente
+let venteSort = 'price_desc'; // tri du mode vente
 let currentBlocId = null;
 let currentCollId = null;
 let currentCardId = null;
@@ -614,34 +704,34 @@ async function fetchPrice(tcgdexId){
     if(!r.ok){ priceCache[tcgdexId]=null; return null; }
     const d=await r.json();
     const cm=d.pricing?.cardmarket;
-    const price = cm?.trend
-      ?? cm?.avg
-      ?? cm?.avg7
-      ?? cm?.avg30
-      ?? cm?.low
-      ?? null;
-    priceCache[tcgdexId]=price;
-    return price;
+    if(!cm){ priceCache[tcgdexId]=null; return null; }
+    // Prix de la version normale (commune)
+    const normal = cm.trend ?? cm.avg ?? cm.avg7 ?? cm.avg30 ?? cm.low ?? null;
+    // Prix de la version reverse/holo (champs séparés -holo dans CardMarket)
+    const reverse = cm['trend-holo'] ?? cm['avg-holo'] ?? cm['avg7-holo'] ?? cm['avg30-holo'] ?? cm['low-holo'] ?? null;
+    const res = { normal, reverse };
+    priceCache[tcgdexId]=res;
+    return res;
   }catch(e){ priceCache[tcgdexId]=null; return null; }
 }
 
-// Récupère le prix d'une carte via TCGdex/CardMarket uniquement
+// Récupère les prix (normal + reverse) d'une carte via TCGdex/CardMarket
 async function getPriceForCard(card){
   if(card.tcgdex_id) return fetchPrice(card.tcgdex_id);
-  return null; // Pas de prix pour les cartes sans tcgdex_id (Méga Évolution etc.)
+  return null; // Pas de prix pour les cartes sans tcgdex_id
 }
 
 /* ══ PRIX STOCKÉS DANS SUPABASE ════════════════════════════════════════
    Évite de recalculer à chaque ouverture. Rafraîchi tous les 7 jours.   */
 const PRICE_MAX_AGE = 7*24*60*60*1000; // 7 jours en ms
-let storedPrices = {}; // { carte_id: {price_eur, updated_at} }
+let storedPrices = {}; // { carte_id: {price_eur, price_reverse, updated_at} }
 
 // Charge tous les prix stockés depuis Supabase (1 seule requête)
 async function loadStoredPrices(){
   try{
-    const rows = await sbGet('card_prices', '?select=carte_id,price_eur,updated_at');
+    const rows = await sbGet('card_prices', '?select=carte_id,price_eur,price_reverse,updated_at,is_manual');
     storedPrices = {};
-    rows.forEach(r=>{ storedPrices[r.carte_id] = { price_eur:r.price_eur, updated_at:r.updated_at }; });
+    rows.forEach(r=>{ storedPrices[r.carte_id] = { price_eur:r.price_eur, price_reverse:r.price_reverse, updated_at:r.updated_at, is_manual:r.is_manual===true }; });
     return true;
   }catch(e){ return false; }
 }
@@ -649,20 +739,40 @@ async function loadStoredPrices(){
 // Vrai si le prix stocké est récent (< 7 jours)
 function isPriceFresh(carteId){
   const s = storedPrices[carteId];
-  if(!s || s.price_eur==null) return false;
+  if(!s || (s.price_eur==null && s.price_reverse==null)) return false;
+  if(s.is_manual) return true; // un prix saisi à la main n'est jamais écrasé par l'API
   const age = Date.now() - new Date(s.updated_at).getTime();
   return age < PRICE_MAX_AGE;
 }
 
-// Sauvegarde un lot de prix dans Supabase (upsert)
+// Sauvegarde un lot de prix dans Supabase (upsert). Chaque entrée : {carteId, normal, reverse}
 async function saveStoredPrices(entries){
+  if(!entries.length) return;
+  // Ne jamais écraser un prix saisi manuellement avec un prix d'API
+  entries = entries.filter(e=>!(storedPrices[e.carteId] && storedPrices[e.carteId].is_manual));
   if(!entries.length) return;
   try{
     const now = new Date().toISOString();
-    const rows = entries.map(e=>({ carte_id:e.carteId, price_eur:e.price, updated_at:now }));
+    const rows = entries.map(e=>({ carte_id:e.carteId, price_eur:e.normal??null, price_reverse:e.reverse??null, updated_at:now, is_manual:false }));
     await sbUpsert('card_prices', rows);
-    rows.forEach(r=>{ storedPrices[r.carte_id]={ price_eur:r.price_eur, updated_at:r.updated_at }; });
-  }catch(e){ /* silencieux : le calcul reste valable en mémoire */ }
+    rows.forEach(r=>{ storedPrices[r.carte_id]={ price_eur:r.price_eur, price_reverse:r.price_reverse, updated_at:r.updated_at, is_manual:false }; });
+  }catch(e){ /* silencieux */ }
+}
+
+// Enregistre un prix SAISI MANUELLEMENT (prioritaire, non écrasé par l'API)
+async function saveManualPrice(carteId, normal, reverse){
+  const now = new Date().toISOString();
+  const row = { carte_id:carteId, price_eur:(normal==null?null:normal), price_reverse:(reverse==null?null:reverse), updated_at:now, is_manual:true };
+  await sbUpsert('card_prices', [row]);
+  storedPrices[carteId] = { price_eur:row.price_eur, price_reverse:row.price_reverse, updated_at:now, is_manual:true };
+  // Mettre à jour le cache mémoire de l'API pour cohérence immédiate
+  priceCache_overrideManual(carteId, row.price_eur, row.price_reverse);
+}
+
+// Force getPriceForCard à renvoyer le prix manuel pour cette carte (via tcgdex_id)
+function priceCache_overrideManual(carteId, normal, reverse){
+  const card=cartes.find(c=>c.id===carteId);
+  if(card && card.tcgdex_id) priceCache[card.tcgdex_id] = { normal:(normal==null?null:normal), reverse:(reverse==null?null:reverse) };
 }
 
 function optImg(url){ if(!url) return 'https://via.placeholder.com/240x336?text=?'; return url.replace(/-2x\.(png|jpg|jpeg|webp)/gi,'.$1'); }
@@ -730,6 +840,7 @@ function enterApp(){
   document.getElementById('tabAdmin').style.display = currentUser ? '' : 'none';
   document.getElementById('tabStock').style.display = currentUser ? '' : 'none';
   document.getElementById('tabScan').style.display = currentUser ? '' : 'none';
+  document.getElementById('tabVente').style.display = currentUser ? 'none' : ''; // vente = session visiteur uniquement
   switchTab('collection');
   loadData();
 }
@@ -743,11 +854,13 @@ function switchTab(tab){
   activeTab=tab;
   document.querySelectorAll('.nav-tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===tab));
   document.getElementById('appBody').style.display   = tab==='collection' ? '' : 'none';
+  document.getElementById('venteBody').style.display = tab==='vente'      ? '' : 'none';
   document.getElementById('scanBody').style.display  = tab==='scan'       ? '' : 'none';
   document.getElementById('stockBody').style.display = tab==='stock'      ? '' : 'none';
   document.getElementById('adminBody').style.display = tab==='admin'      ? '' : 'none';
   document.getElementById('subheader').style.display = tab==='collection' ? '' : 'none';
   if(tab==='scan'){ renderScan(); }
+  if(tab==='vente'){ renderVente(); }
   if(tab==='stock' && stockDirty){ renderStock(); stockDirty=false; }
   if(tab==='admin' && adminDirty){ renderAdmin(); adminDirty=false; }
 }
@@ -799,6 +912,8 @@ async function loadData(){
     buildQuantitesIndex();
     saveToCache();
     loadScanLearning(); // charger l'apprentissage du scan en arrière-plan
+    // Charger les prix enregistrés (utile pour le mode vente des visiteurs)
+    loadStoredPrices().then(()=>{ if(activeTab==='vente') renderVente(); }).catch(()=>{});
     // Re-render uniquement si on est sur la vue blocs (pas en pleine navigation)
     if(!currentBlocId && !currentCollId) renderBlocs();
     renderStock();
@@ -830,6 +945,10 @@ function updateQuantiteIndex(carteId, joueur, rarete, val){
 function getTotalOwned(carteId, viewOwner){
   const owners=viewOwner?[viewOwner]:OWNERS;
   return TYPES.reduce((s,t)=>s+owners.reduce((s2,o)=>s2+getQuantite(carteId,o,t),0),0);
+}
+// Total possédé d'une rareté précise (tous propriétaires confondus)
+function getTotalOwnedType(carteId, rarete){
+  return OWNERS.reduce((s,o)=>s+getQuantite(carteId,o,rarete),0);
 }
 
 function countOwnedInCollection(collId, viewOwner){
@@ -946,10 +1065,24 @@ function renderCards(collId, collNom, blocId, blocNom){
     if(batch.length===0) return;
     priceIdx+=10;
     batch.forEach(card=>{
-      getPriceForCard(card).then(p=>{
+      const renderSlot=p=>{
         const slot=body.querySelector(`.price-slot[data-card-id="${card.id}"]`);
-        if(slot&&p!=null) slot.innerHTML=`<div class="price-badge">${p.toFixed(2)} €</div>`;
-      });
+        if(slot&&p&&(p.normal!=null||p.reverse!=null)){
+          const parts=[];
+          if(p.normal!=null) parts.push(`<div class="price-badge">C ${p.normal.toFixed(2)} €</div>`);
+          // Prix reverse affiché seulement si la carte possède réellement la rareté Reverse
+          const ownsReverse=getTotalOwnedType(card.id,'r')>0;
+          if(ownsReverse && p.reverse!=null) parts.push(`<div class="price-badge price-badge-rev">R ${p.reverse.toFixed(2)} €</div>`);
+          slot.innerHTML=parts.join('');
+        }
+      };
+      // Prix stocké (manuel ou récent) prioritaire ; sinon appel API
+      const sp=storedPrices[card.id];
+      if(sp && (sp.price_eur!=null || sp.price_reverse!=null)){
+        renderSlot({ normal:sp.price_eur, reverse:sp.price_reverse });
+      } else {
+        getPriceForCard(card).then(renderSlot);
+      }
     });
     if(priceIdx<cards.length) setTimeout(loadNextPrices, 200);
   }
@@ -1018,14 +1151,33 @@ function fillModal(carteId){
   document.getElementById('modalImg').src=optImg(card.image);
   renderModalQty(carteId);
 
-  // Prix CardMarket
+  // Prix CardMarket (ou prix manuel s'il existe). Bouton de correction côté Anthony.
   const priceEl=document.getElementById('modalPrice');
   priceEl.className='modal-price na';
-  getPriceForCard(card).then(p=>{
-    if(currentCardId!==carteId) return; // l'utilisateur a déjà changé de carte
-    if(p!=null){ priceEl.className='modal-price'; priceEl.innerHTML=`<div class="price-badge" style="font-size:13px;padding:4px 12px;">${p.toFixed(2)} €</div>`; }
-    else { priceEl.className='modal-price na'; }
-  });
+  const renderModalPrice=(p, manual)=>{
+    if(currentCardId!==carteId) return;
+    const editBtn = (currentUser==='anthony')
+      ? `<button class="price-edit-btn" onclick="openPriceEdit('${carteId}')" title="Corriger le prix manuellement">✏️</button>` : '';
+    if(p && (p.normal!=null || p.reverse!=null)){
+      priceEl.className='modal-price';
+      const parts=[];
+      if(p.normal!=null) parts.push(`<div class="price-badge" style="font-size:13px;padding:4px 12px;">Commune ${p.normal.toFixed(2)} €</div>`);
+      const ownsReverse=getTotalOwnedType(carteId,'r')>0;
+      if(ownsReverse && p.reverse!=null) parts.push(`<div class="price-badge price-badge-rev" style="font-size:13px;padding:4px 12px;">Reverse ${p.reverse.toFixed(2)} €</div>`);
+      if(manual) parts.push(`<span class="price-manual-tag" title="Prix saisi manuellement">✏️</span>`);
+      priceEl.innerHTML=parts.join('')+editBtn;
+    } else {
+      priceEl.className='modal-price na';
+      priceEl.innerHTML = editBtn ? `<span style="color:var(--text2);font-size:12px;">Prix inconnu</span>`+editBtn : '';
+    }
+  };
+  // Si un prix est stocké (manuel ou récent), on l'utilise directement
+  const sp=storedPrices[carteId];
+  if(sp && (sp.price_eur!=null || sp.price_reverse!=null)){
+    renderModalPrice({ normal:sp.price_eur, reverse:sp.price_reverse }, sp.is_manual===true);
+  } else {
+    getPriceForCard(card).then(p=>renderModalPrice(p, false));
+  }
 
   // Afficher/masquer les flèches selon la position dans la collection
   const list=modalCardList();
@@ -1033,6 +1185,55 @@ function fillModal(carteId){
   const prev=document.getElementById('modalPrev'), next=document.getElementById('modalNext');
   if(prev) prev.style.visibility = (idx>0) ? 'visible' : 'hidden';
   if(next) next.style.visibility = (idx>=0 && idx<list.length-1) ? 'visible' : 'hidden';
+}
+
+// ── ÉDITION MANUELLE DU PRIX (Anthony) ──
+let priceEditCardId=null;
+function openPriceEdit(carteId){
+  if(currentUser!=='anthony') return;
+  priceEditCardId=carteId;
+  const card=cartes.find(c=>c.id===carteId);
+  const sp=storedPrices[carteId]||{};
+  document.getElementById('priceEditSub').textContent = card ? `${card.nom||''} · n°${card.numero||''}` : '';
+  document.getElementById('priceEditNormal').value = (sp.price_eur!=null)?sp.price_eur:'';
+  document.getElementById('priceEditReverse').value = (sp.price_reverse!=null)?sp.price_reverse:'';
+  document.getElementById('priceEditModal').style.display='block';
+  document.getElementById('priceEditOverlay').style.display='block';
+}
+function closePriceEdit(){
+  document.getElementById('priceEditModal').style.display='none';
+  document.getElementById('priceEditOverlay').style.display='none';
+  priceEditCardId=null;
+}
+async function savePriceEdit(){
+  if(!priceEditCardId) return;
+  const nRaw=document.getElementById('priceEditNormal').value.trim();
+  const rRaw=document.getElementById('priceEditReverse').value.trim();
+  const normal = nRaw==='' ? null : parseFloat(nRaw.replace(',','.'));
+  const reverse = rRaw==='' ? null : parseFloat(rRaw.replace(',','.'));
+  if((nRaw!=='' && (isNaN(normal)||normal<0)) || (rRaw!=='' && (isNaN(reverse)||reverse<0))){ showToast('Prix invalide'); return; }
+  if(normal==null && reverse==null){ showToast('Saisis au moins un prix'); return; }
+  const id=priceEditCardId;
+  try{
+    await saveManualPrice(id, normal, reverse);
+    showToast('✅ Prix enregistré');
+    closePriceEdit();
+    if(currentCardId===id) fillModal(id); // rafraîchir l'affichage
+  }catch(e){ showToast('❌ '+e.message); }
+}
+async function resetPriceToApi(){
+  if(!priceEditCardId) return;
+  const id=priceEditCardId;
+  const card=cartes.find(c=>c.id===id);
+  try{
+    // Supprimer l'entrée stockée puis recharger depuis l'API
+    await sbDel('card_prices', `?carte_id=eq.${id}`);
+    delete storedPrices[id];
+    if(card && card.tcgdex_id) delete priceCache[card.tcgdex_id];
+    showToast('↻ Prix automatique rétabli');
+    closePriceEdit();
+    if(currentCardId===id) fillModal(id);
+  }catch(e){ showToast('❌ '+e.message); }
 }
 
 // Liste ordonnée des id de cartes de la collection en cours (pour naviguer)
@@ -1402,9 +1603,16 @@ function renderStock(){
     const fmt=v=>v.toFixed(2)+' €';
     const stillThere=()=>document.getElementById('grandTotalValue');
     const qtyByOwner=(card,o)=>TYPES.reduce((s,t)=>s+getQuantite(card.id,o,t),0);
+    // price = { normal, reverse }. On valorise le Reverse au prix reverse, le reste au prix normal.
     const addCard=(card,price)=>{
+      const pn=(price&&price.normal!=null)?price.normal:0;
+      const pr=(price&&price.reverse!=null)?price.reverse:pn;
       priced++;
-      OWNERS.forEach(o=>{ const v=price*qtyByOwner(card,o); perOwner[o]+=v; grand+=v; });
+      OWNERS.forEach(o=>{
+        let v=0;
+        TYPES.forEach(t=>{ const q=getQuantite(card.id,o,t); v += q*(t==='r'?pr:pn); });
+        perOwner[o]+=v; grand+=v;
+      });
     };
     const refreshUI=(partial)=>{
       if(!stillThere()) return;
@@ -1423,7 +1631,7 @@ function renderStock(){
     const toFetch=[]; // cartes nécessitant un appel API
     allCards.forEach(card=>{
       if(isPriceFresh(card.id)){
-        addCard(card, storedPrices[card.id].price_eur);
+        addCard(card, { normal:storedPrices[card.id].price_eur, reverse:storedPrices[card.id].price_reverse });
       } else {
         toFetch.push(card);
       }
@@ -1445,7 +1653,7 @@ function renderStock(){
       }));
       const toSave=[];
       results.forEach(({card,p})=>{
-        if(p!=null){ addCard(card,p); fromApi++; toSave.push({carteId:card.id, price:p}); }
+        if(p!=null){ addCard(card,p); fromApi++; toSave.push({carteId:card.id, normal:p.normal, reverse:p.reverse}); }
       });
       saveStoredPrices(toSave); // sauvegarde en arrière-plan (non bloquant)
       if(!stillThere()) return; // utilisateur a quitté l'onglet
@@ -1806,6 +2014,352 @@ async function deleteCollection(){
     renderAdmin();
   } catch(e) { showToast('❌ '+e.message); }
 }
+
+// ══ MODE VENTE (session visiteur) ════════════════════════════════════════
+// Liste des cartes en double (au moins 1 exemplaire), avec prix et panier de vente.
+const RARETE_LABEL = { c:'Commune', r:'Reverse', p:'Pokéball', m:'Masterball' };
+
+// Renvoie le libellé + la classe CSS de rareté pour une carte/rareté donnée.
+// Une carte au numéro supérieur au total du set est une SECRÈTE (rareté à part).
+// Une carte V/VMAX/EX (rareté 'c' faute de mieux) est étiquetée SPÉCIALE.
+function venteRarInfo(carte, rarete){
+  if(rarete==='c'){
+    if(cardExceedsSet(carte)) return { label:'Secrète', cls:'vente-rar-s' };
+    if(cardIsSpecial(carte))  return { label:'Spéciale', cls:'vente-rar-x' };
+  }
+  return { label:(RARETE_LABEL[rarete]||rarete), cls:'vente-rar-'+rarete };
+}
+
+// Récupère les "lignes de vente" : une entrée par (carte, rareté) possédée.
+// Ainsi une carte avec 2 communes + 1 reverse donne 2 lignes distinctes avec leur prix propre.
+function venteCards(){
+  const out=[];
+  cartes.forEach(c=>{
+    TYPES.forEach(t=>{
+      const qty=getTotalOwnedType(c.id, t);
+      if(qty>0) out.push({ card:c, rarete:t, qty });
+    });
+  });
+  return out;
+}
+
+// Prix connu d'une carte pour une rareté donnée ('c'/'r'...). 0 si inconnu.
+// Commune (et autres non-reverse) → prix normal ; Reverse → prix reverse (fallback normal).
+function ventePrice(carteId, rarete){
+  const s=storedPrices[carteId];
+  if(!s) return 0;
+  if(rarete==='r'){
+    return (s.price_reverse!=null) ? s.price_reverse : (s.price_eur!=null ? s.price_eur : 0);
+  }
+  return (s.price_eur!=null) ? s.price_eur : 0;
+}
+
+
+function renderVente(){
+  const body=document.getElementById('venteBody');
+  if(!body) return;
+  let list=venteCards(); // lignes {card, rarete, qty}
+
+  // Valeur totale du stock de doubles (somme prix par rareté × qty)
+  let totalValue=0, totalCards=0;
+  list.forEach(x=>{ totalValue += ventePrice(x.card.id, x.rarete)*x.qty; totalCards += x.qty; });
+
+  // Filtre de recherche
+  const q=(venteSearch||'').trim().toLowerCase();
+  if(q){
+    list=list.filter(x=>{
+      const coll=collections.find(c=>c.id===x.card.collection_id);
+      return (x.card.nom||'').toLowerCase().includes(q)
+          || (x.card.numero||'').toLowerCase().includes(q)
+          || (coll&&(coll.nom||'').toLowerCase().includes(q));
+    });
+  }
+
+  // Rang de rareté d'une LIGNE (carte+rareté). Les secrètes/spéciales sont les plus rares.
+  const lineRank=x=>{
+    if(cardExceedsSet(x.card)) return 11; // secrètes : les plus rares
+    if(cardIsSpecial(x.card)) return 10;  // V/VMAX/EX
+    const order={m:4,p:3,r:2,c:1};
+    return order[x.rarete]||0;
+  };
+  const byName=(a,b)=>(a.card.nom||'').localeCompare(b.card.nom||'');
+  const priceOf=x=>ventePrice(x.card.id, x.rarete);
+  switch(venteSort){
+    case 'price_desc': list.sort((a,b)=>priceOf(b)-priceOf(a) || byName(a,b)); break;
+    case 'price_asc':  list.sort((a,b)=>priceOf(a)-priceOf(b) || byName(a,b)); break;
+    case 'rare_desc':  list.sort((a,b)=>lineRank(b)-lineRank(a) || priceOf(b)-priceOf(a)); break;
+    case 'rare_asc':   list.sort((a,b)=>lineRank(a)-lineRank(b) || priceOf(b)-priceOf(a)); break;
+    case 'name':       list.sort(byName); break;
+    case 'qty_desc':   list.sort((a,b)=>b.qty-a.qty || priceOf(b)-priceOf(a)); break;
+    default:           list.sort((a,b)=>priceOf(b)-priceOf(a));
+  }
+
+  const rows = list.map(x=>{
+    const c=x.card;
+    const coll=collections.find(cc=>cc.id===c.collection_id);
+    const price=ventePrice(c.id, x.rarete);
+    const key=c.id+'|'+x.rarete;
+    const inCart=venteCart[key]||0;
+    const ri = venteRarInfo(c, x.rarete);
+    return `<div class="vente-card">
+      <img src="${esc(optImg(c.image))}" loading="lazy" onclick='openModal("${c.id}")'>
+      <div class="vente-info">
+        <div class="vente-name">${esc(c.nom)}</div>
+        <div class="vente-meta">${esc(coll?.nom||'')} · n°${esc(c.numero||'')} · <span class="vente-rar ${ri.cls}">${ri.label}</span></div>
+        <div class="vente-row2">
+          <span class="vente-price">${price>0?price.toFixed(2)+' €':'— €'}</span>
+          <span class="vente-stock">x${x.qty} dispo</span>
+        </div>
+      </div>
+      <div class="vente-cart-ctrl">
+        ${inCart>0
+          ? `<button class="vente-qbtn" onclick="venteCartChange('${key}',-1)">−</button>
+             <span class="vente-qnum">${inCart}</span>
+             <button class="vente-qbtn" onclick="venteCartChange('${key}',1)">＋</button>`
+          : `<button class="vente-add" onclick="venteCartChange('${key}',1)">+ Panier</button>`}
+      </div>
+    </div>`;
+  }).join('');
+
+  body.innerHTML = `
+    <div class="vente-wrap">
+      <div class="vente-head">
+        <div class="vente-total-box">
+          <div class="vente-total-label">💰 Valeur de tes doubles</div>
+          <div class="vente-total-val">${totalValue.toFixed(2)} €</div>
+          <div class="vente-total-sub">${totalCards} carte(s) en double</div>
+        </div>
+      </div>
+      <input id="venteSearchInput" type="text" placeholder="Rechercher une carte à vendre…" value="${esc(venteSearch)}"
+        oninput="venteOnSearch(this.value)"
+        style="width:100%;padding:11px 14px;border-radius:12px;border:1.5px solid var(--border);background:var(--bg);color:var(--text);font-size:14px;margin-bottom:8px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+        <span style="font-size:12px;font-weight:700;color:var(--text2);flex-shrink:0;">Trier :</span>
+        <select id="venteSortSelect" onchange="venteOnSort(this.value)"
+          style="flex:1;padding:9px 12px;border-radius:10px;border:1.5px solid var(--border);background:var(--bg);color:var(--text);font-size:13px;font-weight:600;">
+          <option value="price_desc"${venteSort==='price_desc'?' selected':''}>Prix : plus chères d'abord</option>
+          <option value="price_asc"${venteSort==='price_asc'?' selected':''}>Prix : moins chères d'abord</option>
+          <option value="rare_desc"${venteSort==='rare_desc'?' selected':''}>Rareté : plus rares d'abord</option>
+          <option value="rare_asc"${venteSort==='rare_asc'?' selected':''}>Rareté : moins rares d'abord</option>
+          <option value="qty_desc"${venteSort==='qty_desc'?' selected':''}>Quantité : plus nombreuses</option>
+          <option value="name"${venteSort==='name'?' selected':''}>Nom (A → Z)</option>
+        </select>
+      </div>
+      <div class="vente-list">
+        ${rows || '<div style="text-align:center;color:var(--text2);padding:30px;font-size:14px;">Aucune carte en double pour le moment.</div>'}
+      </div>
+    </div>
+    ${renderVenteCartBar()}`;
+}
+
+function venteOnSearch(v){
+  venteSearch=v;
+  renderVente();
+  const inp=document.getElementById('venteSearchInput');
+  if(inp){ inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }
+}
+
+function venteOnSort(v){
+  venteSort=v;
+  renderVente();
+}
+
+// Ajoute/retire une ligne (carte+rareté) du panier. key = "carteId|rarete"
+function venteCartChange(key, delta){
+  const [carteId,rarete]=key.split('|');
+  const max=getTotalOwnedType(carteId, rarete);
+  const cur=venteCart[key]||0;
+  let next=cur+delta;
+  if(next<0) next=0;
+  if(next>max) next=max;
+  if(next===0) delete venteCart[key];
+  else venteCart[key]=next;
+  renderVente();
+}
+
+// Barre de panier en bas
+function renderVenteCartBar(){
+  const keys=Object.keys(venteCart);
+  if(!keys.length) return '';
+  let total=0, count=0;
+  keys.forEach(k=>{ const [id,r]=k.split('|'); total+=ventePrice(id,r)*venteCart[k]; count+=venteCart[k]; });
+  return `<div class="vente-cartbar" onclick="openVenteCart()">
+    <div class="vente-cartbar-left">🛒 ${count} carte(s)</div>
+    <div class="vente-cartbar-right">${total.toFixed(2)} € — Voir le panier</div>
+  </div>`;
+}
+
+// Détail du panier
+function openVenteCart(){
+  const keys=Object.keys(venteCart);
+  if(!keys.length) return;
+  let total=0;
+  const lines=keys.map(k=>{
+    const [id,r]=k.split('|');
+    const c=cartes.find(x=>x.id===id);
+    if(!c) return '';
+    const coll=collections.find(cc=>cc.id===c.collection_id);
+    const price=ventePrice(id,r);
+    const n=venteCart[k];
+    const sub=price*n;
+    total+=sub;
+    return `<div class="vc-line">
+      <img src="${esc(optImg(c.image))}" loading="lazy">
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:13px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(c.nom)} <span class="vente-rar ${venteRarInfo(c,r).cls}">${venteRarInfo(c,r).label}</span></div>
+        <div style="font-size:11px;color:var(--text2);">${esc(coll?.nom||'')} · ${price>0?price.toFixed(2)+' €':'— €'} × ${n}</div>
+      </div>
+      <div style="font-weight:900;font-family:'Space Mono',monospace;white-space:nowrap;">${sub.toFixed(2)} €</div>
+    </div>`;
+  }).join('');
+
+  document.getElementById('venteCartLines').innerHTML=lines;
+  document.getElementById('venteCartTotal').textContent=total.toFixed(2)+' €';
+  document.getElementById('venteCartModal').style.display='block';
+  document.getElementById('venteCartOverlay').style.display='block';
+}
+
+function closeVenteCart(){
+  document.getElementById('venteCartModal').style.display='none';
+  document.getElementById('venteCartOverlay').style.display='none';
+}
+
+function clearVenteCart(){
+  venteCart={};
+  closeVenteCart();
+  renderVente();
+}
+
+// ── VALIDATION DE VENTE : choisir le propriétaire dont on retire la carte ──
+// Le panier est keyé par "carteId|rarete" → la rareté est déjà connue.
+// Il reste à répartir la quantité vendue entre les propriétaires (Valentin/Anthony).
+// Structure : venteCheckoutSel[cartKey] = { owner: nb à retirer }
+let venteCheckoutSel = {};
+
+function startVenteCheckout(){
+  const keys=Object.keys(venteCart);
+  if(!keys.length) return;
+  venteCheckoutSel={};
+  keys.forEach(k=>{
+    const [id,t]=k.split('|');
+    venteCheckoutSel[k]={};
+    let toAssign=venteCart[k];
+    for(const o of OWNERS){
+      if(toAssign<=0) break;
+      const avail=getQuantite(id,o,t);
+      if(avail>0){
+        const take=Math.min(avail,toAssign);
+        venteCheckoutSel[k][o]=take;
+        toAssign-=take;
+      }
+    }
+  });
+  closeVenteCart();
+  renderVenteCheckout();
+  document.getElementById('venteCheckoutModal').style.display='block';
+  document.getElementById('venteCheckoutOverlay').style.display='block';
+}
+
+function renderVenteCheckout(){
+  const keys=Object.keys(venteCart);
+  const linesEl=document.getElementById('venteCheckoutLines');
+  if(!linesEl) return;
+  linesEl.innerHTML = keys.map(k=>{
+    const [id,t]=k.split('|');
+    const c=cartes.find(x=>x.id===id);
+    if(!c) return '';
+    const coll=collections.find(cc=>cc.id===c.collection_id);
+    const need=venteCart[k];
+    const sel=venteCheckoutSel[k]||{};
+    const assigned=Object.values(sel).reduce((a,b)=>a+b,0);
+    const ri = venteRarInfo(c, t);
+    const rows=[];
+    OWNERS.forEach(o=>{
+      const avail=getQuantite(id,o,t);
+      if(avail>0){
+        const chosen=sel[o]||0;
+        const acc=ACCOUNTS[o];
+        rows.push(`<div style="display:flex;align-items:center;gap:8px;padding:6px 0;">
+          <div style="flex:1;font-size:13px;font-weight:700;">
+            ${acc?esc(acc.label):esc(o)}
+            <span style="color:var(--text2);font-weight:600;">(${avail} dispo)</span>
+          </div>
+          <button class="vente-qbtn" onclick="venteCheckoutChange('${k}','${o}',-1)">−</button>
+          <span class="vente-qnum">${chosen}</span>
+          <button class="vente-qbtn" onclick="venteCheckoutChange('${k}','${o}',1)">＋</button>
+        </div>`);
+      }
+    });
+    const ok = assigned===need;
+    return `<div style="border:1px solid var(--border);border-radius:12px;padding:12px;">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+        <img src="${esc(optImg(c.image))}" style="width:36px;height:50px;object-fit:cover;border-radius:6px;background:var(--bg);">
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:13px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(c.nom)} <span class="vente-rar ${ri.cls}">${ri.label}</span></div>
+          <div style="font-size:11px;color:var(--text2);">${esc(coll?.nom||'')} · vendu : ${need}</div>
+        </div>
+        <div style="font-size:12px;font-weight:800;color:${ok?'var(--accent2)':'#ef4444'};white-space:nowrap;">${assigned}/${need}</div>
+      </div>
+      ${rows.join('')}
+    </div>`;
+  }).join('');
+
+  const allOk = keys.every(k=>{
+    const need=venteCart[k];
+    const assigned=Object.values(venteCheckoutSel[k]||{}).reduce((a,b)=>a+b,0);
+    return assigned===need;
+  });
+  const btn=document.getElementById('venteCheckoutConfirm');
+  if(btn){ btn.disabled=!allOk; btn.style.opacity=allOk?'1':'0.5'; }
+}
+
+function venteCheckoutChange(cartKey, owner, delta){
+  const [id,t]=cartKey.split('|');
+  const avail=getQuantite(id,owner,t);
+  if(!venteCheckoutSel[cartKey]) venteCheckoutSel[cartKey]={};
+  const cur=venteCheckoutSel[cartKey][owner]||0;
+  let next=cur+delta;
+  if(next<0) next=0;
+  if(next>avail) next=avail;
+  const others=Object.entries(venteCheckoutSel[cartKey]).reduce((a,[k,v])=>a+(k===owner?0:v),0);
+  if(others+next>venteCart[cartKey]) next=venteCart[cartKey]-others;
+  if(next<0) next=0;
+  venteCheckoutSel[cartKey][owner]=next;
+  renderVenteCheckout();
+}
+
+async function confirmVenteCheckout(){
+  const keys=Object.keys(venteCart);
+  const btn=document.getElementById('venteCheckoutConfirm');
+  if(btn) btn.disabled=true;
+  let removed=0;
+  try{
+    for(const k of keys){
+      const [id,t]=k.split('|');
+      const sel=venteCheckoutSel[k]||{};
+      for(const [o,nb] of Object.entries(sel)){
+        if(nb>0){
+          await changeQty(id, o, t, -nb);
+          removed+=nb;
+        }
+      }
+    }
+    showToast(`✅ Vente enregistrée — ${removed} carte(s) retirée(s) du stock`);
+    venteCart={};
+    venteCheckoutSel={};
+    closeVenteCheckout();
+    renderVente();
+  }catch(e){
+    showToast('❌ Erreur : '+e.message);
+    if(btn) btn.disabled=false;
+  }
+}
+
+function closeVenteCheckout(){
+  document.getElementById('venteCheckoutModal').style.display='none';
+  document.getElementById('venteCheckoutOverlay').style.display='none';
+}
+
 
 // ══ SCANNER CAMÉRA (OCR) — onglet ═══════════════════════════════════════
 let scanStream=null, scanRarity='c', scanPending=null, scanActive=false;
