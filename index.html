@@ -759,6 +759,65 @@ async function saveStoredPrices(entries){
   }catch(e){ /* silencieux */ }
 }
 
+// Actualise EN ARRIÈRE-PLAN tous les prix périmés (>7j) ou absents, même pour les
+// cartes jamais consultées. Traité par petits lots pour ménager l'API et le réseau.
+let _refreshingPrices=false;
+async function refreshAllStalePrices(opts){
+  if(_refreshingPrices) return;
+  _refreshingPrices=true;
+  const force = opts && opts.force;
+  try{
+    // Cartes candidates : ont un tcgdex_id, prix non manuel, et périmé/absent
+    const todo = cartes.filter(c=>{
+      if(!c.tcgdex_id) return false;
+      const s=storedPrices[c.id];
+      if(s && s.is_manual) return false;          // jamais toucher un prix manuel
+      if(force) return true;
+      if(!s || (s.price_eur==null && s.price_reverse==null)) return true; // absent
+      const age = Date.now() - new Date(s.updated_at).getTime();
+      return age >= PRICE_MAX_AGE;                 // périmé
+    });
+    if(!todo.length){ _refreshingPrices=false; return; }
+    const BATCH=8;       // nb d'appels simultanés
+    const PAUSE=400;     // ms entre deux lots
+    let updatedAny=false;
+    for(let i=0;i<todo.length;i+=BATCH){
+      const batch=todo.slice(i,i+BATCH);
+      const results=await Promise.all(batch.map(async c=>{
+        try{ const p=await getPriceForCard(c); return p?{carteId:c.id, normal:p.normal, reverse:p.reverse}:null; }
+        catch(e){ return null; }
+      }));
+      const toSave=results.filter(Boolean);
+      if(toSave.length){ await saveStoredPrices(toSave); updatedAny=true; }
+      // Rafraîchir l'affichage courant au fil de l'eau
+      if(activeTab==='vente') renderVente();
+      else if(currentCollId) refreshVisibleGridPrices();
+      if(i+BATCH<todo.length) await new Promise(r=>setTimeout(r,PAUSE));
+    }
+  }catch(e){ /* silencieux */ }
+  _refreshingPrices=false;
+}
+
+// Forçage manuel de l'actualisation de TOUS les prix (bouton Anthony)
+async function forceRefreshPrices(){
+  const btn=document.getElementById('refreshPricesBtn');
+  if(_refreshingPrices){ showToast('Actualisation déjà en cours…'); return; }
+  if(btn){ btn.disabled=true; btn.textContent='↻ Actualisation en cours…'; btn.style.opacity='0.6'; }
+  showToast('🔄 Actualisation des prix lancée');
+  await refreshAllStalePrices({force:true});
+  if(btn){ btn.disabled=false; btn.textContent='↻ Actualiser tous les prix'; btn.style.opacity='1'; }
+  showToast('✅ Prix actualisés');
+  if(activeTab==='stock'){ stockDirty=true; renderStock(); }
+}
+
+// Rafraîchit les badges de prix des cartes actuellement affichées dans la grille
+function refreshVisibleGridPrices(){
+  document.querySelectorAll('.price-slot[data-card-id]').forEach(slot=>{
+    const id=slot.getAttribute('data-card-id');
+    if(id) refreshCardPriceSlot(id);
+  });
+}
+
 // Enregistre un prix SAISI MANUELLEMENT (prioritaire, non écrasé par l'API)
 async function saveManualPrice(carteId, normal, reverse){
   const now = new Date().toISOString();
@@ -913,7 +972,11 @@ async function loadData(){
     saveToCache();
     loadScanLearning(); // charger l'apprentissage du scan en arrière-plan
     // Charger les prix enregistrés (utile pour le mode vente des visiteurs)
-    loadStoredPrices().then(()=>{ if(activeTab==='vente') renderVente(); }).catch(()=>{});
+    loadStoredPrices().then(()=>{
+      if(activeTab==='vente') renderVente();
+      // Actualiser en arrière-plan tous les prix périmés (même cartes jamais ouvertes)
+      setTimeout(()=>refreshAllStalePrices(), 1500);
+    }).catch(()=>{});
     // Re-render uniquement si on est sur la vue blocs (pas en pleine navigation)
     if(!currentBlocId && !currentCollId) renderBlocs();
     renderStock();
@@ -1631,6 +1694,7 @@ function renderStock(){
     <div class="gt-breakdown">
       ${OWNERS.map(o=>`<span class="gt-chip"><img src="${ACCOUNTS[o].img}"> ${ACCOUNTS[o].label} <span id="gtc-${o}">…</span></span>`).join('')}
     </div>
+    ${currentUser==='anthony'?`<button id="refreshPricesBtn" onclick="forceRefreshPrices()" style="margin-top:12px;padding:10px 16px;border-radius:10px;border:none;background:rgba(255,255,255,0.15);color:#fff;font-weight:800;font-size:13px;cursor:pointer;">↻ Actualiser tous les prix</button>`:''}
   </div>`;
   body.appendChild(gt);
 
