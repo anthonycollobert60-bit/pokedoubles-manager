@@ -535,6 +535,7 @@ let activeTab = 'collection';
 let venteCart = {}; // panier de vente : { carteId: nombre }
 let venteSearch = ''; // filtre de recherche du mode vente
 let venteSort = 'price_desc'; // tri du mode vente
+let venteRarFilter = 'all'; // filtre de rareté du mode vente : all|c|r|p|m|secret
 let currentBlocId = null;
 let currentCollId = null;
 let currentCardId = null;
@@ -2169,10 +2170,6 @@ function renderVente(){
   if(!body) return;
   let list=venteCards(); // lignes {card, rarete, qty}
 
-  // Valeur totale du stock de doubles (somme prix par rareté × qty)
-  let totalValue=0, totalCards=0;
-  list.forEach(x=>{ totalValue += ventePrice(x.card.id, x.rarete)*x.qty; totalCards += x.qty; });
-
   // Filtre de recherche
   const q=(venteSearch||'').trim().toLowerCase();
   if(q){
@@ -2183,6 +2180,20 @@ function renderVente(){
           || (coll&&(coll.nom||'').toLowerCase().includes(q));
     });
   }
+
+  // Filtre de rareté
+  if(venteRarFilter && venteRarFilter!=='all'){
+    list=list.filter(x=>{
+      const secret = cardExceedsSet(x.card) || cardIsSpecial(x.card);
+      if(venteRarFilter==='secret') return secret;        // uniquement secrètes/spéciales
+      if(secret) return false;                            // une secrète n'apparaît pas dans c/r/p/m
+      return x.rarete===venteRarFilter;                   // rareté exacte
+    });
+  }
+
+  // Valeur totale (reflète les filtres actifs : recherche + rareté)
+  let totalValue=0, totalCards=0;
+  list.forEach(x=>{ totalValue += ventePrice(x.card.id, x.rarete)*x.qty; totalCards += x.qty; });
 
   // Rang de rareté d'une LIGNE (carte+rareté). Les secrètes/spéciales sont les plus rares.
   const lineRank=x=>{
@@ -2232,16 +2243,21 @@ function renderVente(){
 
   body.innerHTML = `
     <div class="vente-wrap">
-      <div class="vente-head">
-        <div class="vente-total-box">
-          <div class="vente-total-label">💰 Valeur de tes doubles</div>
-          <div class="vente-total-val">${totalValue.toFixed(2)} €</div>
-          <div class="vente-total-sub">${totalCards} carte(s) en double</div>
-        </div>
-      </div>
       <input id="venteSearchInput" type="text" placeholder="Rechercher une carte à vendre…" value="${esc(venteSearch)}"
         oninput="venteOnSearch(this.value)"
         style="width:100%;padding:11px 14px;border-radius:12px;border:1.5px solid var(--border);background:var(--bg);color:var(--text);font-size:14px;margin-bottom:8px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+        <span style="font-size:12px;font-weight:700;color:var(--text2);flex-shrink:0;">Rareté :</span>
+        <select id="venteRarSelect" onchange="venteOnRarFilter(this.value)"
+          style="flex:1;padding:9px 12px;border-radius:10px;border:1.5px solid var(--border);background:var(--bg);color:var(--text);font-size:13px;font-weight:600;">
+          <option value="all"${venteRarFilter==='all'?' selected':''}>Toutes les raretés</option>
+          <option value="c"${venteRarFilter==='c'?' selected':''}>Commune</option>
+          <option value="r"${venteRarFilter==='r'?' selected':''}>Reverse</option>
+          <option value="p"${venteRarFilter==='p'?' selected':''}>Pokéball</option>
+          <option value="m"${venteRarFilter==='m'?' selected':''}>Masterball</option>
+          <option value="secret"${venteRarFilter==='secret'?' selected':''}>Secrète / Spéciale</option>
+        </select>
+      </div>
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
         <span style="font-size:12px;font-weight:700;color:var(--text2);flex-shrink:0;">Trier :</span>
         <select id="venteSortSelect" onchange="venteOnSort(this.value)"
@@ -2270,6 +2286,11 @@ function venteOnSearch(v){
 
 function venteOnSort(v){
   venteSort=v;
+  renderVente();
+}
+
+function venteOnRarFilter(v){
+  venteRarFilter=v;
   renderVente();
 }
 
