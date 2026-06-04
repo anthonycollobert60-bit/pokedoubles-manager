@@ -930,15 +930,18 @@ let quantitesIndex = {};
 function buildQuantitesIndex(){
   quantitesIndex = {};
   quantites.forEach(q=>{
-    quantitesIndex[q.carte_id+'|'+q.joueur+'|'+q.rarete] = q.quantite;
+    const n = parseInt(q.quantite) || 0;
+    if(n>0) quantitesIndex[q.carte_id+'|'+q.joueur+'|'+q.rarete] = n;
   });
 }
 function getQuantite(carteId, joueur, rarete){
-  return quantitesIndex[carteId+'|'+joueur+'|'+rarete] || 0;
+  const v = quantitesIndex[carteId+'|'+joueur+'|'+rarete];
+  return (typeof v==='number' ? v : parseInt(v)) || 0;
 }
 function updateQuantiteIndex(carteId, joueur, rarete, val){
   const key = carteId+'|'+joueur+'|'+rarete;
-  if(val > 0) quantitesIndex[key] = val;
+  const n = parseInt(val) || 0;
+  if(n > 0) quantitesIndex[key] = n;
   else delete quantitesIndex[key];
 }
 
@@ -1078,10 +1081,17 @@ function renderCards(collId, collNom, blocId, blocNom){
       };
       // Prix stocké (manuel ou récent) prioritaire ; sinon appel API
       const sp=storedPrices[card.id];
-      if(sp && (sp.price_eur!=null || sp.price_reverse!=null)){
+      // On a besoin du reverse si la carte possède la rareté reverse
+      const needReverse = getTotalOwnedType(card.id,'r')>0;
+      const storedReverseMissing = sp && sp.price_reverse==null && !sp.is_manual && needReverse;
+      if(sp && (sp.price_eur!=null || sp.price_reverse!=null) && !storedReverseMissing){
         renderSlot({ normal:sp.price_eur, reverse:sp.price_reverse });
       } else {
-        getPriceForCard(card).then(renderSlot);
+        getPriceForCard(card).then(p=>{
+          renderSlot(p);
+          // Compléter le stockage (normal + reverse) pour la prochaine fois
+          if(p && !(sp&&sp.is_manual)) saveStoredPrices([{carteId:card.id, normal:p.normal, reverse:p.reverse}]);
+        });
       }
     });
     if(priceIdx<cards.length) setTimeout(loadNextPrices, 200);
@@ -1173,10 +1183,15 @@ function fillModal(carteId){
   };
   // Si un prix est stocké (manuel ou récent), on l'utilise directement
   const sp=storedPrices[carteId];
-  if(sp && (sp.price_eur!=null || sp.price_reverse!=null)){
+  const needReverse = getTotalOwnedType(carteId,'r')>0;
+  const storedReverseMissing = sp && sp.price_reverse==null && !sp.is_manual && needReverse;
+  if(sp && (sp.price_eur!=null || sp.price_reverse!=null) && !storedReverseMissing){
     renderModalPrice({ normal:sp.price_eur, reverse:sp.price_reverse }, sp.is_manual===true);
   } else {
-    getPriceForCard(card).then(p=>renderModalPrice(p, false));
+    getPriceForCard(card).then(p=>{
+      renderModalPrice(p, false);
+      if(p && !(sp&&sp.is_manual)) saveStoredPrices([{carteId:carteId, normal:p.normal, reverse:p.reverse}]);
+    });
   }
 
   // Afficher/masquer les flèches selon la position dans la collection
@@ -1205,6 +1220,27 @@ function closePriceEdit(){
   document.getElementById('priceEditOverlay').style.display='none';
   priceEditCardId=null;
 }
+// Met à jour en direct le badge de prix d'une carte dans la grille (sans tout recharger)
+function refreshCardPriceSlot(carteId){
+  const slot=document.querySelector(`.price-slot[data-card-id="${carteId}"]`);
+  if(!slot) return;
+  const sp=storedPrices[carteId];
+  const render=p=>{
+    if(!(p&&(p.normal!=null||p.reverse!=null))){ slot.innerHTML=''; return; }
+    const parts=[];
+    if(p.normal!=null) parts.push(`<div class="price-badge">C ${p.normal.toFixed(2)} €</div>`);
+    const ownsReverse=getTotalOwnedType(carteId,'r')>0;
+    if(ownsReverse && p.reverse!=null) parts.push(`<div class="price-badge price-badge-rev">R ${p.reverse.toFixed(2)} €</div>`);
+    slot.innerHTML=parts.join('');
+  };
+  if(sp && (sp.price_eur!=null || sp.price_reverse!=null)){
+    render({ normal:sp.price_eur, reverse:sp.price_reverse });
+  } else {
+    const card=cartes.find(c=>c.id===carteId);
+    if(card) getPriceForCard(card).then(render); else slot.innerHTML='';
+  }
+}
+
 async function savePriceEdit(){
   if(!priceEditCardId) return;
   const nRaw=document.getElementById('priceEditNormal').value.trim();
@@ -1218,7 +1254,8 @@ async function savePriceEdit(){
     await saveManualPrice(id, normal, reverse);
     showToast('✅ Prix enregistré');
     closePriceEdit();
-    if(currentCardId===id) fillModal(id); // rafraîchir l'affichage
+    if(currentCardId===id) fillModal(id); // rafraîchir le modal
+    refreshCardPriceSlot(id); // rafraîchir la grille en direct
   }catch(e){ showToast('❌ '+e.message); }
 }
 async function resetPriceToApi(){
@@ -1233,6 +1270,7 @@ async function resetPriceToApi(){
     showToast('↻ Prix automatique rétabli');
     closePriceEdit();
     if(currentCardId===id) fillModal(id);
+    refreshCardPriceSlot(id); // rafraîchir la grille en direct
   }catch(e){ showToast('❌ '+e.message); }
 }
 
