@@ -99,6 +99,16 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--text);heig
 .nav-tab:hover{color:var(--text)}
 .nav-tab.active{color:var(--accent2);border-bottom-color:var(--accent2)}
 
+.hamburger-wrap{flex-shrink:0;padding:10px 16px;border-bottom:1px solid var(--border);background:var(--bg2);position:relative;z-index:30}
+.hamburger-btn{width:100%;display:flex;align-items:center;gap:10px;justify-content:flex-start;padding:11px 14px;border-radius:14px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-family:'Nunito',sans-serif;font-weight:900;font-size:15px;cursor:pointer}
+.hamburger-btn span:first-child{font-size:22px;line-height:1}
+#currentTabLabel{font-size:14px}
+.nav-tabs{display:none;position:absolute;left:16px;right:16px;top:calc(var(--topbar-h, 64px) + 58px);z-index:40;flex-direction:column;padding:8px;background:var(--surface);border:1px solid var(--border);border-radius:16px;box-shadow:0 18px 45px rgba(0,0,0,.35)}
+.nav-tabs.open{display:flex}
+.nav-tab{width:100%;text-align:left;border-bottom:none;margin-bottom:0;border-radius:12px;padding:12px 14px;font-size:14px}
+.nav-tab.active{background:var(--surface2);border-bottom-color:transparent;color:var(--accent2)}
+
+
 /* ── APP BODY ───────────────────────────────────────── */
 .app-body{flex:1;padding:16px;overflow-y:auto;overflow-x:hidden;min-height:0;padding-bottom:calc(16px + env(safe-area-inset-bottom,60px))}
 
@@ -451,11 +461,20 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--text);heig
   </header>
 
   <!-- NAV TABS -->
-  <nav class="nav-tabs">
-    <button class="nav-tab active" data-tab="collection" id="tabCollection" onclick="switchTab('collection')">Collection</button>
-    <button class="nav-tab" data-tab="vente" id="tabVente" style="display:none;" onclick="switchTab('vente')">🛒 Vente</button>
+  <div class="hamburger-wrap">
+    <button class="hamburger-btn" onclick="toggleAppMenu()" aria-label="Ouvrir le menu">
+      <span>☰</span>
+      <span id="currentTabLabel">Profil</span>
+    </button>
+  </div>
+  <nav class="nav-tabs" id="appMenu">
+    <button class="nav-tab active" data-tab="profile" id="tabProfile" style="display:none;" onclick="switchTab('profile')">👤 Profil</button>
+    <button class="nav-tab" data-tab="collection" id="tabCollection" onclick="switchTab('collection')">Collection</button>
     <button class="nav-tab" data-tab="scan" id="tabScan" style="display:none;" onclick="switchTab('scan')">📷 Scan</button>
     <button class="nav-tab" data-tab="stock" id="tabStock" onclick="switchTab('stock')">Stock</button>
+    <button class="nav-tab" data-tab="transfer" id="tabTransfer" style="display:none;" onclick="switchTab('transfer')">🔄 Transfert</button>
+    <button class="nav-tab" data-tab="vente" id="tabVente" style="display:none;" onclick="switchTab('vente')">🛒 Vente</button>
+    <button class="nav-tab" data-tab="history" id="tabHistory" style="display:none;" onclick="switchTab('history')">📜 Historique</button>
     <button class="nav-tab" data-tab="admin" id="tabAdmin" style="display:none;" onclick="switchTab('admin')">⚙️ Gérer</button>
   </nav>
 
@@ -478,6 +497,9 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--text);heig
   <div class="app-body" id="venteBody" style="display:none;"></div>
   <div class="app-body" id="scanBody" style="display:none;"></div>
   <div class="app-body" id="stockBody" style="display:none;"></div>
+  <div class="app-body" id="profileBody" style="display:none;"></div>
+  <div class="app-body" id="transferBody" style="display:none;"></div>
+  <div class="app-body" id="historyBody" style="display:none;"></div>
   <div class="app-body" id="adminBody" style="display:none;"></div>
 </div>
 
@@ -1008,6 +1030,85 @@ function userDisplayAvatar(user){
   if(!user) return '👁️';
   return '👤';
 }
+let userProfiles = {};
+let appHistory = [];
+
+function profileKey(user){
+  return String(user||'').toLowerCase();
+}
+function getProfile(user){
+  const key=profileKey(user);
+  return userProfiles[key] || {};
+}
+function effectiveUserLabel(user){
+  const p=getProfile(user);
+  if(p.pseudo) return p.pseudo;
+  return userDisplayLabel(user);
+}
+function effectiveUserAvatar(user){
+  const p=getProfile(user);
+  if(p.avatar) return p.avatar;
+  if(user==='anthony' || user==='valentin') return userDisplayAvatar(user);
+  if(!user) return '👁️';
+  return '👤';
+}
+function refreshUserChip(){
+  const label=document.getElementById('userLabel');
+  const dot=document.getElementById('userDot');
+  if(!label || !dot) return;
+  label.textContent=effectiveUserLabel(currentUser);
+  dot.innerHTML=effectiveUserAvatar(currentUser);
+}
+async function loadUserProfiles(){
+  try{
+    const rows=await sbGet('user_profiles','?select=*');
+    userProfiles={};
+    (rows||[]).forEach(r=>{
+      if(r.user_key) userProfiles[profileKey(r.user_key)]={pseudo:r.pseudo||'',avatar:r.avatar||''};
+    });
+    refreshUserChip();
+    if(activeTab==='profile') renderProfile();
+  }catch(e){
+    try{ userProfiles=JSON.parse(localStorage.getItem('pokecards_profiles')||'{}'); }catch(_){ userProfiles={}; }
+    refreshUserChip();
+    if(activeTab==='profile') renderProfile();
+  }
+}
+async function saveUserProfile(){
+  if(!currentUser){ showToast('Connecte-toi'); return; }
+  const pseudo=(document.getElementById('profilePseudo')?.value||'').trim();
+  const avatar=(document.getElementById('profileAvatar')?.value||'').trim() || '👤';
+  if(!pseudo){ showToast('Entre un pseudo'); return; }
+  const key=profileKey(currentUser);
+  userProfiles[key]={pseudo,avatar};
+  localStorage.setItem('pokecards_profiles', JSON.stringify(userProfiles));
+  try{
+    await sbPost('user_profiles',{user_key:key,pseudo,avatar,updated_at:new Date().toISOString()});
+  }catch(e){
+    try{ await sbPatch('user_profiles','?user_key=eq.'+encodeURIComponent(key),{pseudo,avatar,updated_at:new Date().toISOString()}); }catch(_){}
+  }
+  refreshUserChip();
+  stockDirty=true;
+  if(activeTab==='stock') renderStock();
+  if(activeTab==='transfer') renderTransfer();
+  if(activeTab==='history') renderHistory();
+  renderProfile();
+  await addHistory('profil', currentUser, '', `Profil modifié : ${pseudo}`);
+  showToast('✅ Profil enregistré');
+}
+async function addHistory(type, actor, target, details){
+  const row={type,actor:actor||'',target:target||'',details:details||'',created_at:new Date().toISOString()};
+  appHistory=[row,...appHistory].slice(0,200);
+  try{ await sbPost('app_history', row); }catch(e){}
+}
+async function loadHistory(){
+  try{
+    const rows=await sbGet('app_history','?select=*&order=created_at.desc&limit=100');
+    appHistory=Array.isArray(rows)?rows:[];
+  }catch(e){ appHistory=[]; }
+  if(activeTab==='history') renderHistory();
+}
+
 function saveAuthSession(session){
   sbAuthToken = session?.access_token || '';
   sbRefreshToken = session?.refresh_token || '';
@@ -1104,8 +1205,8 @@ function enterApp(){
   const pass=document.getElementById('authPassword'); if(pass) pass.value='';
 
   if(currentUser){
-    document.getElementById('userLabel').textContent=userDisplayLabel(currentUser);
-    document.getElementById('userDot').innerHTML=userDisplayAvatar(currentUser);
+    document.getElementById('userLabel').textContent=effectiveUserLabel(currentUser);
+    document.getElementById('userDot').innerHTML=effectiveUserAvatar(currentUser);
     const title=document.getElementById('visitorHeaderTitle');
     if(title) title.style.display='none';
     const topSearch=document.querySelector('.topbar-search');
@@ -1127,9 +1228,14 @@ function enterApp(){
   document.getElementById('tabAdmin').style.display = currentUser==='anthony' ? '' : 'none';
   document.getElementById('tabStock').style.display = currentUser ? '' : 'none';
   document.getElementById('tabScan').style.display = currentUser ? '' : 'none';
+  document.getElementById('tabProfile').style.display = currentUser ? '' : 'none';
+  document.getElementById('tabHistory').style.display = currentUser==='anthony' ? '' : 'none';
+  document.getElementById('tabTransfer').style.display = currentUser==='anthony' ? '' : 'none';
   document.getElementById('tabVente').style.display = (!currentUser || currentUser==='anthony' || currentUser==='valentin') ? '' : 'none';
-  switchTab(currentUser ? 'collection' : 'vente');
+  switchTab(currentUser ? 'profile' : 'vente');
   loadData();
+  loadUserProfiles();
+  loadHistory();
   if(['anthony','valentin'].includes(currentUser)){
     setTimeout(()=>loadVenteDemandes(true),1200);
     if(!window._venteDemandesTimer){
@@ -1141,23 +1247,48 @@ function enterApp(){
 /* ══ TABS ══════════════════════════════════════════════ */
 let stockDirty=true, adminDirty=true;
 
+function toggleAppMenu(){
+  const menu=document.getElementById('appMenu');
+  if(menu) menu.classList.toggle('open');
+}
+function closeAppMenu(){
+  const menu=document.getElementById('appMenu');
+  if(menu) menu.classList.remove('open');
+}
+function getTabLabel(tab){
+  const labels={profile:'👤 Profil',collection:'Collection',scan:'📷 Scan',stock:'Stock',transfer:'🔄 Transfert',vente:'🛒 Vente',history:'📜 Historique',admin:'⚙️ Gérer'};
+  return labels[tab]||'Menu';
+}
+function updateCurrentTabLabel(tab){
+  const el=document.getElementById('currentTabLabel');
+  if(el) el.textContent=getTabLabel(tab);
+}
+
 function switchTab(tab){
   if(!currentUser && tab!=='vente') tab='vente';
   if(currentUser && !['anthony','valentin'].includes(currentUser) && tab==='vente') tab='collection';
-  if(currentUser!=='anthony' && tab==='admin') tab=currentUser?'collection':'vente';
+  if(currentUser!=='anthony' && (tab==='admin' || tab==='history' || tab==='transfer')) tab=currentUser?'collection':'vente';
   // Couper la caméra si on quitte l'onglet Scan
   if(activeTab==='scan' && tab!=='scan'){ stopScanCam(); }
   activeTab=tab;
+  closeAppMenu();
+  updateCurrentTabLabel(tab);
   document.querySelectorAll('.nav-tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===tab));
   document.getElementById('appBody').style.display   = tab==='collection' ? '' : 'none';
   document.getElementById('venteBody').style.display = tab==='vente'      ? '' : 'none';
   document.getElementById('scanBody').style.display  = tab==='scan'       ? '' : 'none';
   document.getElementById('stockBody').style.display = tab==='stock'      ? '' : 'none';
   document.getElementById('adminBody').style.display = tab==='admin'      ? '' : 'none';
+  document.getElementById('profileBody').style.display = tab==='profile'    ? '' : 'none';
+  document.getElementById('transferBody').style.display = tab==='transfer'  ? '' : 'none';
+  document.getElementById('historyBody').style.display = tab==='history'    ? '' : 'none';
   document.getElementById('subheader').style.display = tab==='collection' ? '' : 'none';
   if(tab==='scan'){ renderScan(); }
   if(tab==='vente'){ renderVente(); }
   if(tab==='stock' && stockDirty){ renderStock(); stockDirty=false; }
+  if(tab==='profile'){ renderProfile(); }
+  if(tab==='transfer'){ renderTransfer(); }
+  if(tab==='history'){ loadHistory(); renderHistory(); }
   if(tab==='admin' && adminDirty){ renderAdmin(); adminDirty=false; }
 }
 
@@ -1206,6 +1337,8 @@ async function loadData(){
     ]);
     blocs=b; collections=c; cartes=ca; quantites=q;
     buildQuantitesIndex();
+    loadUserProfiles();
+    loadHistory();
     saveToCache();
     loadScanLearning(); // charger l'apprentissage du scan en arrière-plan
     // Charger les prix enregistrés (utile pour le mode vente des visiteurs)
@@ -1623,7 +1756,7 @@ function renderModalQty(carteId){
     area.style.cssText='';
     const block=document.createElement('div');
     block.className=`qty-block ${currentUser}`;
-    block.innerHTML=`<h4>${isKnownOwner(currentUser)?((ACCOUNTS[currentUser]?.emoji||'👤')+' '):'👤 '}${userDisplayLabel(currentUser)}</h4>`;
+    block.innerHTML=`<h4>${isKnownOwner(currentUser)?((ACCOUNTS[currentUser]?.emoji||'👤')+' '):'👤 '}${esc(effectiveUserLabel(currentUser))}</h4>`;
 
     // Afficher uniquement les raretés > 0
     TYPES.forEach(t=>{
@@ -1911,14 +2044,14 @@ function renderStock(){
   body.appendChild(title);
   const grid=document.createElement('div'); grid.className='stock-grid';
   stockOwners.forEach(owner=>{
-    const acc=ACCOUNTS[owner] || {label:userDisplayLabel(owner), img:''}; const s=stats[owner];
+    const acc=ACCOUNTS[owner] || {label:userDisplayLabel(owner), img:''}; const displayLabel=effectiveUserLabel(owner); const displayAvatar=effectiveUserAvatar(owner); const s=stats[owner];
     const card=document.createElement('div');
     card.className=`stock-user-card ${owner}`;
     card.innerHTML=`<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
       <div style="width:44px;height:44px;border-radius:50%;background:${owner==='valentin'?'rgba(245,158,11,0.15)':(owner==='anthony'?'rgba(255,100,0,0.12)':'rgba(99,102,241,0.14)')};display:flex;align-items:center;justify-content:center;font-size:22px;">
-        ${acc.img?`<img src="${acc.img}" style="width:40px;height:40px;object-fit:contain;">`:'👤'}
+        ${String(displayAvatar).startsWith('<')?displayAvatar:esc(displayAvatar)}
       </div>
-      <div><div style="font-size:15px;font-weight:900;">${acc.label}</div>
+      <div><div style="font-size:15px;font-weight:900;">${esc(displayLabel)}</div>
       <div style="font-size:12px;color:var(--text2);font-weight:600;">${s.doubles.length} cartes en double</div></div></div>
       <div class="stock-stat"><span class="stock-stat-label">Total exemplaires</span><span class="stock-stat-value">${s.total}</span></div>
       ${TYPES.map(t=>`<div class="stock-stat"><span class="stock-stat-label"><span class="badge badge-${t}">${t.toUpperCase()}</span> ${TYPE_LABELS[t]}</span><span class="stock-stat-value">${s.byType[t]}</span></div>`).join('')}
@@ -1937,7 +2070,7 @@ function renderStock(){
     <div class="gt-amount" id="grandTotalValue">Calcul…</div>
     <div class="gt-sub" id="grandTotalSub">Estimation en cours…</div>
     <div class="gt-breakdown">
-      ${stockOwners.map(o=>`<span class="gt-chip">${ACCOUNTS[o]?.img?`<img src="${ACCOUNTS[o].img}">`:''} ${esc(userDisplayLabel(o))} <span id="gtc-${o}">…</span></span>`).join('')}
+      ${stockOwners.map(o=>`<span class="gt-chip">${String(effectiveUserAvatar(o)).startsWith('<')?effectiveUserAvatar(o):esc(effectiveUserAvatar(o))} ${esc(effectiveUserLabel(o))} <span id="gtc-${o}">…</span></span>`).join('')}
     </div>
     ${currentUser==='anthony'?`<button id="refreshPricesBtn" onclick="forceRefreshPrices()" style="margin-top:12px;padding:10px 16px;border-radius:10px;border:none;background:rgba(255,255,255,0.15);color:#fff;font-weight:800;font-size:13px;cursor:pointer;">↻ Actualiser tous les prix</button>`:''}
   </div>`;
@@ -2019,6 +2152,212 @@ function renderStock(){
     refreshUI(false);
     if(sub()) sub().textContent=`${priced} cartes avec un prix connu`;
   })();
+}
+
+
+function renderProfile(){
+  const body=document.getElementById('profileBody');
+  if(!currentUser){ body.innerHTML='<div class="empty-state"><h3>Connecte-toi</h3></div>'; return; }
+  const p=getProfile(currentUser);
+  body.innerHTML=`
+    <div class="section-title">👤 Profil utilisateur</div>
+    <div class="admin-section">
+      <h3>Mon profil</h3>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:10px;">Ce pseudo remplace l’adresse e-mail dans l’application.</div>
+      <div class="form-row">
+        <input class="form-input" id="profilePseudo" placeholder="Pseudo" value="${esc(p.pseudo||userDisplayLabel(currentUser))}">
+      </div>
+      <div class="form-row">
+        <input class="form-input" id="profileAvatar" placeholder="Emoji avatar, ex : 👤" value="${esc(p.avatar||'👤')}" style="max-width:160px;">
+        <button class="btn-sm" onclick="saveUserProfile()">Enregistrer</button>
+      </div>
+    </div>
+    <div class="admin-section" style="border-color:rgba(239,68,68,.45);">
+      <h3>🗑️ Supprimer mon compte</h3>      <button class="btn-sm danger" onclick="deleteMyAccount()">Supprimer mon compte</button>
+    </div>`;
+}
+
+function historyLabel(row){
+  const d=row.created_at ? new Date(row.created_at).toLocaleString('fr-FR') : '';
+  const actor=effectiveUserLabel(row.actor)||row.actor||'';
+  const target=effectiveUserLabel(row.target)||row.target||'';
+  let icon=row.type==='vente'?'🛒':row.type==='transfert'?'🔄':row.type==='profil'?'👤':'📌';
+  return `${icon} <b>${esc(row.type||'Action')}</b> <span style="color:var(--text2);font-size:11px;">${esc(d)}</span><br>
+    <span style="font-size:12px;color:var(--text2);">${esc(actor)}${target?' → '+esc(target):''}</span>
+    <div style="margin-top:4px;font-size:13px;">${esc(row.details||'')}</div>`;
+}
+function renderHistory(){
+  const body=document.getElementById('historyBody');
+  if(currentUser!=='anthony'){ body.innerHTML='<div class="empty-state"><h3>Accès réservé</h3></div>'; return; }
+  const filter=document.getElementById('historyFilter')?.value||'all';
+  const rows=(appHistory||[]).filter(r=>filter==='all' || r.type===filter);
+  body.innerHTML=`
+    <div class="section-title">📜 Historique</div>
+    <div class="form-row" style="margin-bottom:12px;">
+      <select class="form-select" id="historyFilter" onchange="renderHistory()">
+        <option value="all" ${filter==='all'?'selected':''}>Tout</option>
+        <option value="vente" ${filter==='vente'?'selected':''}>Ventes</option>
+        <option value="transfert" ${filter==='transfert'?'selected':''}>Transferts</option>
+        <option value="profil" ${filter==='profil'?'selected':''}>Profils</option>
+      </select>
+    </div>
+    ${rows.length?rows.map(r=>`<div class="list-item" style="display:block;cursor:default;">${historyLabel(r)}</div>`).join(''):`<div class="empty-state"><h3>Aucun historique</h3></div>`}`;
+}
+
+function transferCardHasQty(cardId, owner){
+  return TYPES.some(t=>getQuantite(cardId, owner, t)>0);
+}
+function transferCardOptions(query='', owner='anthony'){
+  const q=String(query||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();
+  return cartes.filter(c=>{
+    if(!transferCardHasQty(c.id, owner)) return false;
+    const coll=collections.find(x=>x.id===c.collection_id);
+    const txt=`${c.nom||''} ${c.numero||''} ${coll?.nom||''}`.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+    return !q || txt.includes(q);
+  }).slice(0,150).map(c=>{
+    const coll=collections.find(x=>x.id===c.collection_id);
+    const total=TYPES.reduce((s,t)=>s+getQuantite(c.id, owner, t),0);
+    return `<option value="${c.id}">${esc(c.nom)} (${esc(c.numero||'')})${coll?' · '+esc(coll.nom):''} · ${total} dispo</option>`;
+  }).join('');
+}
+
+let transferCart=[];
+
+async function deleteMyAccount(){
+  if(!currentUser){ return; }
+  if(!confirm('Supprimer ton compte de l’application ? Tes quantités et ton profil seront supprimés.')) return;
+  const key=profileKey(currentUser);
+  try{
+    await sbDel('quantites','?joueur=eq.'+encodeURIComponent(currentUser));
+    await sbDel('user_profiles','?user_key=eq.'+encodeURIComponent(key));
+    await addHistory('profil', currentUser, '', 'Compte supprimé de l’application');
+  }catch(e){}
+  delete userProfiles[key];
+  quantites=quantites.filter(q=>q.joueur!==currentUser);
+  buildQuantitesIndex();
+  saveToCache();
+  showToast('✅ Compte supprimé de l’application');
+  doLogout();
+}
+
+function renderTransfer(){
+  const body=document.getElementById('transferBody');
+  if(currentUser!=='anthony'){ body.innerHTML='<div class="empty-state"><h3>Accès réservé</h3></div>'; return; }
+  const searchValue=document.getElementById('transferCardSearch')?.value||'';
+  const selectedFrom=document.getElementById('transferFrom')?.value||'anthony';
+  const rows=transferCart.map((it,i)=>{
+    const c=cartes.find(x=>x.id===it.carteId);
+    const available=getQuantite(it.carteId,it.from,it.rarete);
+    return `<div class="list-item" style="display:block;cursor:default;">
+      <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;">
+        <div>
+          <b>${esc(c?.nom||'Carte')}</b>
+          <div style="font-size:12px;color:var(--text2);">${esc(effectiveUserLabel(it.from))} → ${esc(effectiveUserLabel(it.to))} · ${esc(TYPE_LABELS[it.rarete]||it.rarete)} · x${it.qty}</div>
+          <div style="font-size:11px;color:var(--text2);">Disponible actuellement : ${available}</div>
+        </div>
+        <button class="btn-sm danger" onclick="removeTransferItem(${i})">Retirer</button>
+      </div>
+    </div>`;
+  }).join('');
+  body.innerHTML=`
+    <div class="section-title">🔄 Transfert de stock</div>
+    <div class="admin-section">
+      <h3>Ajouter une carte au transfert</h3>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.4;">Ajoute plusieurs cartes puis valide tout le transfert en une seule fois.</div>
+      <div class="form-row">
+        <select class="form-select" id="transferFrom" onchange="filterTransferCards()">
+          <option value="anthony">Anthony</option>
+          <option value="valentin">Valentin</option>
+        </select>
+        <select class="form-select" id="transferTo">
+          <option value="valentin">Valentin</option>
+          <option value="anthony">Anthony</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <div style="width:100%;position:relative;">
+          <input class="form-input" id="transferCardSearch" placeholder="🔍 Rechercher une carte à transférer…" value="${esc(searchValue)}" oninput="filterTransferCards()" autocomplete="off">
+          <select class="form-select" id="transferCardId" style="margin-top:8px;width:100%;">
+            <option value="">${searchValue?'-- Résultats de recherche --':'-- Choisir une carte --'}</option>
+            ${transferCardOptions(searchValue, selectedFrom)}
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <select class="form-select" id="transferRarete">
+          <option value="c">Commune / Normale</option>
+          <option value="r">Reverse</option>
+          <option value="p">Pokéball</option>
+          <option value="m">Masterball</option>
+        </select>
+        <input class="form-input" id="transferQty" type="number" min="1" value="1" style="max-width:110px;">
+        <button class="btn-sm" onclick="addTransferItem()">Ajouter au transfert</button>
+      </div>
+    </div>
+    <div class="admin-section">
+      <h3>Panier de transfert (${transferCart.length})</h3>
+      ${rows || '<div class="empty-state"><h3>Aucune carte ajoutée</h3></div>'}
+      <button class="btn-sm" onclick="validateTransferCart()" ${transferCart.length?'':'disabled'}>Valider tout le transfert</button>
+    </div>`;
+}
+
+
+function filterTransferCards(){
+  const input=document.getElementById('transferCardSearch');
+  const sel=document.getElementById('transferCardId');
+  if(!input || !sel) return;
+  const q=input.value||'';
+  const owner=document.getElementById('transferFrom')?.value||'anthony';
+  sel.innerHTML = `<option value="">${q?'-- Résultats de recherche --':'-- Choisir une carte --'}</option>` + transferCardOptions(q, owner);
+  const first=[...sel.options].find((o,i)=>i>0);
+  if(first) sel.value=first.value;
+}
+
+function addTransferItem(){
+  const from=document.getElementById('transferFrom')?.value||'';
+  const to=document.getElementById('transferTo')?.value||'';
+  const carteId=document.getElementById('transferCardId')?.value||'';
+  const rarete=document.getElementById('transferRarete')?.value||'c';
+  const qty=parseInt(document.getElementById('transferQty')?.value||'0',10);
+  if(!from||!to||from===to){ showToast('Choisis Anthony et Valentin dans un sens différent'); return; }
+  if(!carteId){ showToast('Choisis une carte'); return; }
+  if(!qty||qty<1){ showToast('Quantité invalide'); return; }
+  const already=transferCart.filter(x=>x.from===from && x.carteId===carteId && x.rarete===rarete).reduce((s,x)=>s+x.qty,0);
+  const available=getQuantite(carteId,from,rarete);
+  if(available < already+qty){ showToast(`Stock insuffisant : ${available} disponible`); return; }
+  const existing=transferCart.find(x=>x.from===from && x.to===to && x.carteId===carteId && x.rarete===rarete);
+  if(existing) existing.qty+=qty;
+  else transferCart.push({from,to,carteId,rarete,qty});
+  renderTransfer();
+  showToast('✅ Carte ajoutée au transfert');
+}
+
+function removeTransferItem(i){
+  transferCart.splice(i,1);
+  renderTransfer();
+}
+
+async function validateTransferCart(){
+  if(currentUser!=='anthony'){ showToast('Accès réservé'); return; }
+  if(!transferCart.length){ showToast('Aucune carte à transférer'); return; }
+  for(const it of transferCart){
+    const sameFrom=transferCart.filter(x=>x.from===it.from && x.carteId===it.carteId && x.rarete===it.rarete).reduce((s,x)=>s+x.qty,0);
+    const available=getQuantite(it.carteId,it.from,it.rarete);
+    if(available<sameFrom){ showToast('Stock insuffisant pour une carte du panier'); return; }
+  }
+  for(const it of transferCart){
+    await changeQty(it.carteId, it.from, it.rarete, -it.qty);
+    await changeQty(it.carteId, it.to, it.rarete, it.qty);
+  }
+  const details=transferCart.map(it=>{
+    const c=cartes.find(x=>x.id===it.carteId);
+    return `${it.qty} × ${c?.nom||'Carte'} (${TYPE_LABELS[it.rarete]||it.rarete})`;
+  }).join(' ; ');
+  await addHistory('transfert', 'anthony', 'valentin', details);
+  transferCart=[];
+  stockDirty=true;
+  renderTransfer();
+  showToast('✅ Transfert effectué');
 }
 
 /* ══ ADMIN ═════════════════════════════════════════════ */
@@ -2120,7 +2459,6 @@ function renderAdmin(){
       <button class="btn-sm" onclick="addCarteManual()">Ajouter</button>
     </div>
   </div>
-
   <!-- Renommer -->
   <div class="admin-section">
     <h3>✏️ Renommer</h3>
@@ -3053,7 +3391,7 @@ function renderVenteCheckout(){
         const acc=ACCOUNTS[o];
         rows.push(`<div style="display:flex;align-items:center;gap:8px;padding:6px 0;">
           <div style="flex:1;font-size:13px;font-weight:700;">
-            ${acc?esc(acc.label):esc(o)}
+            ${esc(effectiveUserLabel(o))}
             <span style="color:var(--text2);font-weight:600;">(${avail} dispo)</span>
           </div>
           <button class="vente-qbtn" onclick="venteCheckoutChange('${k}','${o}',-1)">−</button>
@@ -3125,6 +3463,7 @@ async function confirmVenteCheckout(){
       venteActiveDemandeId=null;
       await loadVenteDemandes(false);
     }
+    await addHistory('vente', currentUser||'anthony', '', `Vente validée — ${removed} carte(s) retirée(s) du stock`);
     showToast(`✅ Vente validée — ${removed} carte(s) retirée(s) du stock`);
     venteCart={};
     venteCheckoutSel={};
