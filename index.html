@@ -107,6 +107,10 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--text);heig
 .nav-tabs.open{display:flex}
 .nav-tab{width:100%;text-align:left;border-bottom:none;margin-bottom:0;border-radius:12px;padding:12px 14px;font-size:14px}
 .nav-tab.active{background:var(--surface2);border-bottom-color:transparent;color:var(--accent2)}
+.profile-avatar-img{display:inline-block;border-radius:50%;object-fit:cover;vertical-align:middle;background:var(--surface2);border:1px solid var(--border);}
+.user-dot .profile-avatar-img{width:26px!important;height:26px!important;border:none;}
+.gt-chip .profile-avatar-img{width:18px!important;height:18px!important;border:none;margin-right:4px;}
+
 
 
 /* ── APP BODY ───────────────────────────────────────── */
@@ -1034,9 +1038,24 @@ function userDisplayLabel(user){
   if(!user) return 'Visiteur';
   return (String(user).split('@')[0] || 'Mon compte');
 }
+function isImageAvatar(value){
+  const v=String(value||'').trim();
+  if(/^data:image\//i.test(v)) return true;
+  if(!/^https?:\/\//i.test(v)) return false;
+  // On accepte surtout les vraies URL d'image ou les URL Supabase Storage.
+  return /\.(png|jpe?g|webp|gif|avif)(\?|#|$)/i.test(v) || /\/storage\/v1\/object\/public\//i.test(v);
+}
+function renderAvatar(value, size=26){
+  const v=String(value||'').trim();
+  if(!v) return '👤';
+  if(isImageAvatar(v)){
+    return `<img class="profile-avatar-img" src="${esc(v)}" loading="lazy" referrerpolicy="no-referrer" onerror="this.replaceWith(document.createTextNode('👤'))" style="width:${size}px;height:${size}px;">`;
+  }
+  return esc(v);
+}
 function userDisplayAvatar(user){
-  if(user==='anthony') return `<img src="${ACCOUNTS.anthony.img}" style="width:26px;height:26px;object-fit:contain;">`;
-  if(user==='valentin') return `<img src="${ACCOUNTS.valentin.img}" style="width:26px;height:26px;object-fit:contain;">`;
+  if(user==='anthony') return renderAvatar(ACCOUNTS.anthony.img,26);
+  if(user==='valentin') return renderAvatar(ACCOUNTS.valentin.img,26);
   if(!user) return '👁️';
   return '👤';
 }
@@ -1057,9 +1076,9 @@ function effectiveUserLabel(user){
   if(p.pseudo) return p.pseudo;
   return userDisplayLabel(user);
 }
-function effectiveUserAvatar(user){
+function effectiveUserAvatar(user, size=26){
   const p=getProfile(user);
-  if(p.avatar) return p.avatar;
+  if(p.avatar) return renderAvatar(p.avatar, size);
   if(user==='anthony' || user==='valentin') return userDisplayAvatar(user);
   if(!user) return '👁️';
   return '👤';
@@ -2173,7 +2192,7 @@ function renderStock(){
   body.appendChild(title);
   const grid=document.createElement('div'); grid.className='stock-grid';
   stockOwners.forEach(owner=>{
-    const acc=ACCOUNTS[owner] || {label:userDisplayLabel(owner), img:''}; const displayLabel=effectiveUserLabel(owner); const displayAvatar=effectiveUserAvatar(owner); const s=stats[owner];
+    const acc=ACCOUNTS[owner] || {label:userDisplayLabel(owner), img:''}; const displayLabel=effectiveUserLabel(owner); const displayAvatar=effectiveUserAvatar(owner,40); const s=stats[owner];
     const card=document.createElement('div');
     card.className=`stock-user-card ${owner}`;
     card.innerHTML=`<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
@@ -2199,7 +2218,7 @@ function renderStock(){
     <div class="gt-amount" id="grandTotalValue">Calcul…</div>
     <div class="gt-sub" id="grandTotalSub">Estimation en cours…</div>
     <div class="gt-breakdown">
-      ${stockOwners.map(o=>`<span class="gt-chip">${String(effectiveUserAvatar(o)).startsWith('<')?effectiveUserAvatar(o):esc(effectiveUserAvatar(o))} ${esc(effectiveUserLabel(o))} <span id="gtc-${o}">…</span></span>`).join('')}
+      ${stockOwners.map(o=>`<span class="gt-chip">${String(effectiveUserAvatar(o,18)).startsWith('<')?effectiveUserAvatar(o,18):esc(effectiveUserAvatar(o,18))} ${esc(effectiveUserLabel(o))} <span id="gtc-${o}">…</span></span>`).join('')}
     </div>
     ${currentUser==='anthony'?`<button id="refreshPricesBtn" onclick="forceRefreshPrices()" style="margin-top:12px;padding:10px 16px;border-radius:10px;border:none;background:rgba(255,255,255,0.15);color:#fff;font-weight:800;font-size:13px;cursor:pointer;">↻ Actualiser tous les prix</button>`:''}
   </div>`;
@@ -2297,8 +2316,19 @@ function renderProfile(){
         <input class="form-input" id="profilePseudo" placeholder="Pseudo" value="${esc(p.pseudo||userDisplayLabel(currentUser))}">
       </div>
       <div class="form-row">
-        <input class="form-input" id="profileAvatar" placeholder="Emoji avatar, ex : 👤" value="${esc(p.avatar||'👤')}" style="max-width:160px;">
+        <input class="form-input" id="profileAvatar" placeholder="Emoji ou URL image directe" value="${esc(p.avatar||'👤')}" oninput="updateAvatarPreview()" style="min-width:220px;">
         <button class="btn-sm" onclick="saveUserProfile()">Enregistrer</button>
+      </div>
+      <div class="form-row" style="align-items:center;">
+        <input id="avatarFileInput" type="file" accept="image/*" style="display:none" onchange="uploadAvatarImage(this)">
+        <button class="btn-secondary" type="button" onclick="document.getElementById('avatarFileInput').click()">📷 Choisir une image</button>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;margin-top:8px;font-size:12px;color:var(--text2);font-weight:800;">
+        <span>Aperçu :</span>
+        <span id="avatarPreview" style="width:42px;height:42px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:var(--surface2);font-size:24px;overflow:hidden;">${effectiveUserAvatar(currentUser,42)}</span>
+      </div>
+      <div style="font-size:11px;color:var(--text2);margin-top:8px;line-height:1.4;">
+        Tu peux utiliser un emoji, une URL directe d’image, ou choisir une image depuis ton téléphone.
       </div>
     </div>
     <div class="admin-section">
@@ -2349,6 +2379,86 @@ function renderProfile(){
     <div class="admin-section" style="border-color:rgba(239,68,68,.45);">
       <h3>🗑️ Supprimer mon compte</h3>      <button class="btn-sm danger" onclick="deleteMyAccount()">Supprimer mon compte</button>
     </div>`;
+}
+
+
+function avatarUploadPath(file){
+  const key=profileKey(currentUser||'user').replace(/[^a-z0-9@._-]+/gi,'_');
+  const stamp=Date.now();
+  return `${key}/${stamp}.jpg`;
+}
+
+function resizeAvatarFile(file, maxSize=512, quality=0.86){
+  return new Promise((resolve,reject)=>{
+    const img=new Image();
+    const url=URL.createObjectURL(file);
+    img.onload=()=>{
+      try{
+        const canvas=document.createElement('canvas');
+        const w=img.naturalWidth||img.width;
+        const h=img.naturalHeight||img.height;
+        const side=Math.min(w,h);
+        const sx=(w-side)/2;
+        const sy=(h-side)/2;
+        canvas.width=maxSize;
+        canvas.height=maxSize;
+        const ctx=canvas.getContext('2d');
+        ctx.drawImage(img,sx,sy,side,side,0,0,maxSize,maxSize);
+        canvas.toBlob(blob=>{
+          URL.revokeObjectURL(url);
+          if(!blob) reject(new Error('Image impossible à convertir'));
+          else resolve(blob);
+        },'image/jpeg',quality);
+      }catch(e){ URL.revokeObjectURL(url); reject(e); }
+    };
+    img.onerror=()=>{ URL.revokeObjectURL(url); reject(new Error('Image illisible')); };
+    img.src=url;
+  });
+}
+
+async function uploadAvatarImage(input){
+  if(!currentUser){ showToast('Connecte-toi'); return; }
+  const file=input?.files?.[0];
+  if(!file) return;
+  if(!file.type.startsWith('image/')){ showToast('Choisis une image'); return; }
+  try{
+    showToast('⏳ Préparation de l’image…', 4000);
+    const blob=await resizeAvatarFile(file);
+    const path=avatarUploadPath(file);
+    const uploadUrl=`${SUPABASE_URL}/storage/v1/object/avatars/${path}`;
+
+    const res=await fetch(uploadUrl,{
+      method:'POST',
+      headers:{
+        'apikey':SUPABASE_KEY,
+        'Authorization':'Bearer '+(sbAuthToken||SUPABASE_KEY),
+        'Content-Type':'image/jpeg',
+        'x-upsert':'true'
+      },
+      body:blob
+    });
+
+    if(!res.ok){
+      const err=await res.json().catch(()=>({message:res.statusText}));
+      throw new Error(err.message || 'Upload refusé');
+    }
+
+    const publicUrl=`${SUPABASE_URL}/storage/v1/object/public/avatars/${path}`;
+    const avatarInput=document.getElementById('profileAvatar');
+    if(avatarInput) avatarInput.value=publicUrl;
+    updateAvatarPreview();
+    showToast('✅ Image ajoutée, clique sur Enregistrer');
+  }catch(e){
+    showToast('❌ Image non envoyée : '+e.message);
+  }finally{
+    if(input) input.value='';
+  }
+}
+
+function updateAvatarPreview(){
+  const box=document.getElementById('avatarPreview');
+  const val=document.getElementById('profileAvatar')?.value||'';
+  if(box) box.innerHTML=renderAvatar(val||'👤',42);
 }
 
 function historyLabel(row){
