@@ -609,6 +609,9 @@ const VALENTIN_EMAIL = 'blanquetvalentin27190@gmail.com';
 function getStoredAuthValue(key){
   return localStorage.getItem(key) || sessionStorage.getItem(key) || '';
 }
+function authIsPersistent(){
+  return localStorage.getItem('pokecards_remember_login') === '1';
+}
 let sbAuthToken = getStoredAuthValue('pokecards_auth_token');
 let sbRefreshToken = getStoredAuthValue('pokecards_refresh_token');
 let currentAuthEmail = getStoredAuthValue('pokecards_auth_email');
@@ -1215,12 +1218,17 @@ function saveAuthSession(session, persist){
   sbAuthToken = session?.access_token || '';
   sbRefreshToken = session?.refresh_token || '';
   currentAuthEmail = normalizeEmail(session?.user?.email || currentAuthEmail);
-  const store = persist ? localStorage : sessionStorage;
-  const other = persist ? sessionStorage : localStorage;
+  const keep = !!persist;
+  const store = keep ? localStorage : sessionStorage;
+  const other = keep ? sessionStorage : localStorage;
   ['pokecards_auth_token','pokecards_refresh_token','pokecards_auth_email'].forEach(k=>other.removeItem(k));
+  if(keep) localStorage.setItem('pokecards_remember_login','1');
+  else localStorage.removeItem('pokecards_remember_login');
   if(sbAuthToken) store.setItem('pokecards_auth_token', sbAuthToken); else store.removeItem('pokecards_auth_token');
   if(sbRefreshToken) store.setItem('pokecards_refresh_token', sbRefreshToken); else store.removeItem('pokecards_refresh_token');
   if(currentAuthEmail) store.setItem('pokecards_auth_email', currentAuthEmail); else store.removeItem('pokecards_auth_email');
+  const cb=document.getElementById('rememberLogin');
+  if(cb) cb.checked=keep;
 }
 function clearAuthSession(){
   sbAuthToken=''; sbRefreshToken=''; currentAuthEmail='';
@@ -1228,6 +1236,7 @@ function clearAuthSession(){
     localStorage.removeItem(k);
     sessionStorage.removeItem(k);
   });
+  localStorage.removeItem('pokecards_remember_login');
 }
 async function authRequest(path, body, token){
   const res=await fetch(SUPABASE_URL + '/auth/v1/' + path, {
@@ -1280,10 +1289,22 @@ function loginAsVisitor(){
   enterApp();
 }
 async function tryRestoreAuth(){
-  if(!sbAuthToken && sbRefreshToken){
-    try{ saveAuthSession(await authRequest('token?grant_type=refresh_token', {refresh_token:sbRefreshToken}), !!localStorage.getItem('pokecards_refresh_token')); }
-    catch(e){ clearAuthSession(); }
+  const cb=document.getElementById('rememberLogin');
+  if(cb) cb.checked=authIsPersistent();
+
+  // On privilégie le refresh_token : il permet de restaurer une session expirée.
+  if(sbRefreshToken){
+    try{
+      saveAuthSession(
+        await authRequest('token?grant_type=refresh_token', {refresh_token:sbRefreshToken}),
+        authIsPersistent()
+      );
+    }catch(e){
+      // Si la session était temporaire, on la supprime. Si elle était persistante mais expirée, il faudra se reconnecter.
+      clearAuthSession();
+    }
   }
+
   if(sbAuthToken && currentAuthEmail){
     currentUser=roleFromEmail(currentAuthEmail);
     selectedUser=currentUser;
