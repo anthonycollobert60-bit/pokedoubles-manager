@@ -2873,6 +2873,7 @@ async function renderMessages(){
     if(picker) picker.classList.add('open');
     if(input){ input.value=previousCardSearch; renderChatCardSearchResults(); setTimeout(()=>input.focus(),50); }
   }
+  refreshChatPendingPreview();
   setTimeout(()=>{ const box=document.getElementById('chatBox'); if(box) box.scrollTop=box.scrollHeight; },50);
 }
 let pendingChatBlob=null;
@@ -2908,11 +2909,7 @@ async function prepareChatPhoto(input){
     pendingChatBlob=await resizeChatImage(file);
     if(pendingChatPreviewUrl) URL.revokeObjectURL(pendingChatPreviewUrl);
     pendingChatPreviewUrl=URL.createObjectURL(pendingChatBlob);
-    const box=document.getElementById('chatMediaPreview');
-    if(box){
-      box.style.display='flex';
-      box.innerHTML=`<img src="${pendingChatPreviewUrl}"><span>Photo prête</span><button class="btn-sm danger" onclick="clearChatPhoto()">Retirer</button>`;
-    }
+    refreshChatPendingPreview();
   }catch(e){ showToast('❌ '+e.message); }
   finally{ if(input) input.value=''; }
 }
@@ -2920,8 +2917,7 @@ function clearChatPhoto(){
   pendingChatBlob=null;
   if(pendingChatPreviewUrl) URL.revokeObjectURL(pendingChatPreviewUrl);
   pendingChatPreviewUrl='';
-  const box=document.getElementById('chatMediaPreview');
-  if(box){ box.style.display='none'; box.innerHTML=''; }
+  refreshChatPendingPreview();
 }
 async function uploadChatImage(blob, friendKey){
   const cid=conversationIdFor(currentUser, friendKey);
@@ -2946,21 +2942,34 @@ async function uploadChatImage(blob, friendKey){
 }
 
 let pendingSharedCardId='';
+function refreshChatPendingPreview(){
+  const box=document.getElementById('chatMediaPreview');
+  if(!box) return;
+  const parts=[];
+  if(pendingChatBlob && pendingChatPreviewUrl){
+    parts.push(`<img src="${pendingChatPreviewUrl}"><span>Photo prête</span><button class="btn-sm danger" onclick="clearChatPhoto()">Retirer photo</button>`);
+  }
+  if(pendingSharedCardId){
+    const card=cartes.find(c=>String(c.id)===String(pendingSharedCardId));
+    if(card){
+      parts.push(`<img src="${esc(optImg(card.image))}"><span>Carte prête : ${esc(card.nom||'Carte')}</span><button class="btn-sm danger" onclick="clearSharedCard()">Retirer carte</button>`);
+    }
+  }
+  if(parts.length){
+    box.style.display='flex';
+    box.innerHTML=parts.join('<span style="width:1px;height:32px;background:var(--border);"></span>');
+  }else{
+    box.style.display='none';
+    box.innerHTML='';
+  }
+}
 function setPendingSharedCard(carteId){
   pendingSharedCardId=String(carteId||'');
-  const box=document.getElementById('chatMediaPreview');
-  const card=cartes.find(c=>String(c.id)===pendingSharedCardId);
-  if(box && card){
-    box.style.display='flex';
-    box.innerHTML=`<img src="${esc(optImg(card.image))}"><span>Carte prête : ${esc(card.nom||'Carte')}</span><button class="btn-sm danger" onclick="clearSharedCard()">Retirer</button>`;
-  }
+  refreshChatPendingPreview();
 }
 function clearSharedCard(){
   pendingSharedCardId='';
-  if(!pendingChatBlob){
-    const box=document.getElementById('chatMediaPreview');
-    if(box){ box.style.display='none'; box.innerHTML=''; }
-  }
+  refreshChatPendingPreview();
 }
 function shareCurrentCardToChat(carteId){
   if(!currentUser){ showToast('Connecte-toi'); return; }
