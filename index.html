@@ -1167,11 +1167,11 @@ async function loadUserProfiles(){
       if(r.user_key) userProfiles[profileKey(r.user_key)]={pseudo:r.pseudo||'',avatar:r.avatar||''};
     });
     refreshUserChip();
-    if(activeTab==='profile') renderProfile();
+    safeRenderProfile();
   }catch(e){
     try{ userProfiles=JSON.parse(localStorage.getItem('pokecards_profiles')||'{}'); }catch(_){ userProfiles={}; }
     refreshUserChip();
-    if(activeTab==='profile') renderProfile();
+    safeRenderProfile();
   }
 }
 async function saveUserProfile(){
@@ -1226,8 +1226,8 @@ async function loadFriends(){
       ...(Array.isArray(outgoing)?outgoing.map(r=>({...r,_direction:'outgoing'})):[])
     ];
   }catch(e){ userFriends=[]; friendRequests=[]; }
-  if(activeTab==='profile') renderProfile();
-  if(activeTab==='transfer') renderTransfer();
+  safeRenderProfile();
+  safeRenderTransfer();
 }
 
 function friendLabel(friendKey){
@@ -1470,14 +1470,37 @@ function enterApp(){
 let stockDirty=true, adminDirty=true;
 
 
+
+function isTypingNow(){
+  const el=document.activeElement;
+  if(!el) return false;
+  const tag=(el.tagName||'').toLowerCase();
+  if(tag==='input' || tag==='textarea' || tag==='select' || el.isContentEditable) return true;
+  return false;
+}
+function canAutoRerender(){
+  return !isTypingNow()
+    && !document.getElementById('chatCardPicker')?.classList.contains('open')
+    && !document.getElementById('gsOverlay')?.classList.contains('open');
+}
+function safeRenderMessages(){
+  if(activeTab==='messages' && canAutoRerender()) renderMessages();
+}
+function safeRenderTransfer(){
+  if(activeTab==='transfer' && canAutoRerender()) { stockDirty=true; renderTransfer(); }
+}
+function safeRenderProfile(){
+  if(activeTab==='profile' && canAutoRerender()) renderProfile();
+}
+
 function startLivePolling(){
   if(window._socialPollingTimer) return;
   window._socialPollingTimer=setInterval(async()=>{
     if(!currentUser) return;
     await Promise.allSettled([loadFriends(), refreshMessagesBadge(), loadNotifications()]);
-    if(activeTab==='messages') renderMessages();
-    if(activeTab==='transfer') { stockDirty=true; renderTransfer(); }
-    if(activeTab==='profile') renderProfile();
+    safeRenderMessages();
+    safeRenderTransfer();
+    safeRenderProfile();
   }, 12000);
 }
 
@@ -2808,6 +2831,9 @@ async function renderMessages(){
       <div class="empty-state"><h3>Aucun ami</h3><p>Ajoute un ami dans Profil pour commencer une discussion.</p></div>`;
     return;
   }
+  const previousChatText=document.getElementById('chatText')?.value||'';
+  const previousCardSearch=document.getElementById('chatCardSearch')?.value||'';
+  const wasPickerOpen=document.getElementById('chatCardPicker')?.classList.contains('open')||false;
   if(!currentChatFriend || !friends.includes(profileKey(currentChatFriend))) currentChatFriend=friends[0];
   await loadChatMessages(currentChatFriend);
   await markConversationAsRead(currentChatFriend);
@@ -2839,6 +2865,14 @@ async function renderMessages(){
         <button class="btn-sm" onclick="sendChatMessage()">Envoyer</button>
       </div>
     </div>`;
+  const txt=document.getElementById('chatText');
+  if(txt && previousChatText) txt.value=previousChatText;
+  if(wasPickerOpen){
+    const picker=document.getElementById('chatCardPicker');
+    const input=document.getElementById('chatCardSearch');
+    if(picker) picker.classList.add('open');
+    if(input){ input.value=previousCardSearch; renderChatCardSearchResults(); setTimeout(()=>input.focus(),50); }
+  }
   setTimeout(()=>{ const box=document.getElementById('chatBox'); if(box) box.scrollTop=box.scrollHeight; },50);
 }
 let pendingChatBlob=null;
