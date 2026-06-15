@@ -343,6 +343,13 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--text);heig
 .poke-card{position:relative}
 .share-card-preview{display:flex;gap:8px;align-items:center;border:1px solid var(--border);border-radius:12px;padding:8px;margin-top:6px;background:rgba(255,255,255,.04)}
 .share-card-preview img{width:46px;height:64px;object-fit:contain;border-radius:6px}
+.chat-card-picker{display:none;border:1px solid var(--border);border-radius:16px;background:var(--surface2);padding:10px;gap:8px;flex-direction:column}
+.chat-card-picker.open{display:flex}
+.chat-card-results{max-height:260px;overflow:auto;display:flex;flex-direction:column;gap:6px}
+.chat-card-result{display:flex;align-items:center;gap:8px;padding:8px;border-radius:12px;border:1px solid var(--border);background:rgba(255,255,255,.04);cursor:pointer}
+.chat-card-result:hover{background:rgba(255,255,255,.08)}
+.chat-card-result img{width:38px;height:54px;object-fit:contain;border-radius:5px}
+
 .smart-grid{display:grid;grid-template-columns:1fr;gap:10px}
 .smart-card{display:flex;gap:8px;align-items:center;border:1px solid var(--border);border-radius:12px;padding:8px;background:rgba(255,255,255,.04)}
 .smart-card img{width:42px;height:58px;object-fit:contain;border-radius:6px}
@@ -2816,6 +2823,13 @@ async function renderMessages(){
       <div class="chat-box" id="chatBox">
         ${chatMessages.length?chatMessages.map(renderMessageBubble).join(''):'<div class="empty-state"><h3>Aucun message</h3></div>'}
       </div>
+      <div class="chat-card-picker" id="chatCardPicker">
+        <div style="display:flex;gap:8px;align-items:center;">
+          <input class="form-input" id="chatCardSearch" placeholder="🔍 Rechercher une carte par nom, numéro ou collection…" oninput="renderChatCardSearchResults()" autocomplete="off">
+          <button class="btn-sm danger" onclick="closeCardSharePicker()">Fermer</button>
+        </div>
+        <div class="chat-card-results" id="chatCardResults"></div>
+      </div>
       <div class="chat-media-preview" id="chatMediaPreview"></div>
       <div class="chat-compose">
         <textarea class="form-input" id="chatText" placeholder="Écrire un message…"></textarea>
@@ -2925,12 +2939,47 @@ function shareCurrentCardToChat(carteId){
 
 function openCardSharePicker(){
   if(!currentChatFriend){ showToast('Choisis un ami'); return; }
-  const q=prompt('Nom ou numéro de la carte à montrer :');
-  if(!q) return;
-  const n=q.toLowerCase().trim();
-  const found=cartes.find(c=>(c.nom||'').toLowerCase().includes(n) || String(c.numero||'').toLowerCase().includes(n));
-  if(!found){ showToast('Carte introuvable'); return; }
-  setPendingSharedCard(found.id);
+  const picker=document.getElementById('chatCardPicker');
+  if(!picker) return;
+  picker.classList.add('open');
+  const input=document.getElementById('chatCardSearch');
+  if(input){ input.value=''; setTimeout(()=>input.focus(),50); }
+  renderChatCardSearchResults();
+}
+function closeCardSharePicker(){
+  const picker=document.getElementById('chatCardPicker');
+  if(picker) picker.classList.remove('open');
+}
+function normalizeSearchText(s){
+  return String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();
+}
+function renderChatCardSearchResults(){
+  const box=document.getElementById('chatCardResults');
+  if(!box) return;
+  const q=normalizeSearchText(document.getElementById('chatCardSearch')?.value||'');
+  let results=cartes.filter(c=>{
+    const coll=collections.find(x=>x.id===c.collection_id);
+    const txt=normalizeSearchText(`${c.nom||''} ${c.numero||''} ${coll?.nom||''}`);
+    return !q || txt.includes(q);
+  }).slice(0,80);
+  if(!results.length){
+    box.innerHTML='<div class="empty-state" style="padding:12px;"><h3>Aucune carte trouvée</h3></div>';
+    return;
+  }
+  box.innerHTML=results.map(c=>{
+    const coll=collections.find(x=>x.id===c.collection_id);
+    return `<div class="chat-card-result" onclick="selectChatSharedCard('${c.id}')">
+      <img src="${esc(optImg(c.image))}">
+      <div>
+        <b>${esc(c.nom||'Carte')}</b>
+        <div style="font-size:11px;color:var(--text2);">${esc(c.numero||'')}${coll?' · '+esc(coll.nom):''}</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+function selectChatSharedCard(carteId){
+  setPendingSharedCard(carteId);
+  closeCardSharePicker();
 }
 
 async function sendChatMessage(){
