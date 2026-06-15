@@ -888,12 +888,23 @@ async function getPriceForCard(card){
 const PRICE_MAX_AGE = 7*24*60*60*1000; // 7 jours en ms
 let storedPrices = {}; // { carte_id: {price_eur, price_reverse, updated_at} }
 
+function hydrateStoredPrices(rows){
+  storedPrices = {};
+  (rows||[]).forEach(r=>{
+    storedPrices[r.carte_id] = {
+      price_eur:r.price_eur,
+      price_reverse:r.price_reverse,
+      updated_at:r.updated_at,
+      is_manual:r.is_manual===true
+    };
+  });
+}
+
 // Charge tous les prix stockés depuis Supabase (1 seule requête)
 async function loadStoredPrices(){
   try{
     const rows = await sbGet('card_prices', '?select=carte_id,price_eur,price_reverse,updated_at,is_manual');
-    storedPrices = {};
-    rows.forEach(r=>{ storedPrices[r.carte_id] = { price_eur:r.price_eur, price_reverse:r.price_reverse, updated_at:r.updated_at, is_manual:r.is_manual===true }; });
+    hydrateStoredPrices(rows);
     return true;
   }catch(e){ return false; }
 }
@@ -1007,7 +1018,7 @@ function clearCache() {
   localStorage.removeItem('pokecards_order');
   localStorage.removeItem('pokecards_ts');
   blocs=[]; collections=[]; cartes=[]; quantites=[];
-  showToast('🗑️ Cache vidé — rechargement…');
+  showToast('🗑️ Ancien cache local vidé — rechargement Supabase…');
   setTimeout(()=>loadData(),800);
 }
 
@@ -1441,28 +1452,14 @@ function switchTab(tab){
 
 /* ══ DATA LOADING ══════════════════════════════════════ */
 function loadFromCache(){
-  try{
-    const b=localStorage.getItem('pokecards_blocs');
-    const c=localStorage.getItem('pokecards_colls');
-    const ca=localStorage.getItem('pokecards_cartes');
-    const q=localStorage.getItem('pokecards_qtys');
-    if(b&&c&&ca&&q){
-      blocs=JSON.parse(b); collections=JSON.parse(c);
-      cartes=JSON.parse(ca); quantites=JSON.parse(q);
-      buildQuantitesIndex();
-      return blocs.length>0 && cartes.length>0;
-    }
-  }catch(e){}
+  // Données collection/stock/prix = Supabase uniquement.
+  // On évite de relire de gros JSON localStorage qui provoquaient des lags.
   return false;
 }
 
 function saveToCache(){
-  try{
-    localStorage.setItem('pokecards_blocs', JSON.stringify(blocs));
-    localStorage.setItem('pokecards_colls', JSON.stringify(collections));
-    localStorage.setItem('pokecards_cartes', JSON.stringify(cartes));
-    localStorage.setItem('pokecards_qtys', JSON.stringify(quantites));
-  }catch(e){}
+  // No-op volontaire : les données sont déjà écrites dans Supabase.
+  // On garde la fonction pour ne pas casser les anciens appels.
 }
 
 async function loadData(){
@@ -1476,28 +1473,26 @@ async function loadData(){
   }
   // 2. Rafraîchissement depuis Supabase en arrière-plan
   try {
-    const [b,c,ca,q] = await Promise.all([
+    const [b,c,ca,q,prices] = await Promise.all([
       sbGet('blocs','?select=*&order=ordre.asc'),
       sbGet('collections','?select=*&order=ordre.asc,nom.asc'),
       sbGet('cartes','?select=*&order=ordre.asc'),
-      sbGet('quantites','?select=*')
+      sbGet('quantites','?select=*'),
+      sbGet('card_prices','?select=carte_id,price_eur,price_reverse,updated_at,is_manual')
     ]);
     blocs=b; collections=c; cartes=ca; quantites=q;
+    hydrateStoredPrices(prices);
     buildQuantitesIndex();
     loadUserProfiles();
     loadHistory();
     loadFriends();
     saveToCache();
     loadScanLearning(); // charger l'apprentissage du scan en arrière-plan
-    // Charger les prix enregistrés (utile pour le mode vente des visiteurs)
-    loadStoredPrices().then(()=>{
-      if(activeTab==='vente') renderVente();
-      // Actualiser en arrière-plan tous les prix périmés (même cartes jamais ouvertes)
-      setTimeout(()=>refreshAllStalePrices(), 1500);
-    }).catch(()=>{});
+    // Les prix viennent de Supabase. Pas d'actualisation massive automatique au démarrage.
+    if(activeTab==='vente') renderVente();
     // Re-render uniquement si on est sur la vue blocs (pas en pleine navigation)
     if(!currentBlocId && !currentCollId) renderBlocs();
-    renderStock();
+    if(activeTab==='stock') renderStock();
   } catch(e) {
     if(!hasCache){
       document.getElementById('appBody').innerHTML=`<div style="padding:24px"><div style="background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);border-radius:12px;padding:20px;color:#ef4444;font-weight:700;">⚠️ Erreur de connexion à la base de données.<br><small style="opacity:0.8">${e.message}</small></div></div>`;
@@ -1642,43 +1637,19 @@ function renderCards(collId, collNom, blocId, blocNom){
     el.onclick=()=>openModal(el.dataset.id);
   });
 
-  // Charger les prix en arrière-plan par petits groupes (throttle)
-  let priceIdx=0;
-  function loadNextPrices(){
-    const batch=cards.slice(priceIdx, priceIdx+10);
-    if(batch.length===0) return;
-    priceIdx+=10;
-    batch.forEach(card=>{
-      // Reverse possédé DANS LA VUE COURANTE (même périmètre que les badges)
-      const ownsReverseView = owners.reduce((s,o)=>s+getQuantite(card.id,o,'r'),0)>0;
-      const renderSlot=p=>{
-        const slot=body.querySelector(`.price-slot[data-card-id="${card.id}"]`);
-        if(slot&&p&&(p.normal!=null||p.reverse!=null)){
-          const parts=[];
-          if(p.normal!=null) parts.push(`<div class="price-badge">C ${p.normal.toFixed(2)} €</div>`);
-          // Prix reverse affiché seulement si la carte possède le reverse dans la vue courante
-          if(ownsReverseView && p.reverse!=null) parts.push(`<div class="price-badge price-badge-rev">R ${p.reverse.toFixed(2)} €</div>`);
-          slot.innerHTML=parts.join('');
-        }
-      };
-      // Prix stocké (manuel ou récent) prioritaire ; sinon appel API
-      const sp=storedPrices[card.id];
-      // On a besoin du reverse si la carte possède la rareté reverse (dans la vue)
-      const needReverse = ownsReverseView;
-      const storedReverseMissing = sp && sp.price_reverse==null && !sp.is_manual && needReverse;
-      if(sp && (sp.price_eur!=null || sp.price_reverse!=null) && !storedReverseMissing){
-        renderSlot({ normal:sp.price_eur, reverse:sp.price_reverse });
-      } else {
-        getPriceForCard(card).then(p=>{
-          renderSlot(p);
-          // Compléter le stockage (normal + reverse) pour la prochaine fois
-          if(p && !(sp&&sp.is_manual)) saveStoredPrices([{carteId:card.id, normal:p.normal, reverse:p.reverse}]);
-        });
-      }
-    });
-    if(priceIdx<cards.length) setTimeout(loadNextPrices, 200);
-  }
-  setTimeout(loadNextPrices, 100);
+  // Affichage prix depuis Supabase uniquement.
+  // Aucun appel API automatique ici : cela évite les lags quand une collection contient beaucoup de cartes.
+  cards.forEach(card=>{
+    const slot=body.querySelector(`.price-slot[data-card-id="${card.id}"]`);
+    if(!slot) return;
+    const sp=storedPrices[card.id];
+    if(!sp || (sp.price_eur==null && sp.price_reverse==null)){ slot.innerHTML=''; return; }
+    const ownsReverseView = owners.reduce((s,o)=>s+getQuantite(card.id,o,'r'),0)>0;
+    const parts=[];
+    if(sp.price_eur!=null) parts.push(`<div class="price-badge">C ${Number(sp.price_eur).toFixed(2)} €</div>`);
+    if(ownsReverseView && sp.price_reverse!=null) parts.push(`<div class="price-badge price-badge-rev">R ${Number(sp.price_reverse).toFixed(2)} €</div>`);
+    slot.innerHTML=parts.join('');
+  });
 }
 
 function buildBadges(container, carteId, viewOwner){
@@ -1821,8 +1792,7 @@ function refreshCardPriceSlot(carteId){
   if(sp && (sp.price_eur!=null || sp.price_reverse!=null)){
     render({ normal:sp.price_eur, reverse:sp.price_reverse });
   } else {
-    const card=cartes.find(c=>c.id===carteId);
-    if(card) getPriceForCard(card).then(render); else slot.innerHTML='';
+    slot.innerHTML='';
   }
 }
 
