@@ -2974,9 +2974,16 @@ function clearSharedCard(){
 function shareCurrentCardToChat(carteId){
   if(!currentUser){ showToast('Connecte-toi'); return; }
   if(!chatFriends().length){ showToast('Ajoute un ami pour partager une carte'); return; }
+
+  // On garde la carte en mémoire AVANT de changer d'onglet.
+  // Comme renderMessages reconstruit l'écran, l'aperçu sera réaffiché après le rendu.
+  pendingSharedCardId=String(carteId||'');
+
   closeModal();
   switchTab('messages');
-  setTimeout(()=>setPendingSharedCard(carteId),250);
+
+  // Sécurité : si l'écran Messages est déjà rendu, on force aussi l'aperçu.
+  setTimeout(()=>refreshChatPendingPreview(),350);
 }
 
 
