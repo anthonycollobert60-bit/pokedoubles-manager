@@ -319,6 +319,19 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--text);heig
 .price-manual-tag{font-size:11px;opacity:0.7;align-self:center}
 .modal-price{display:flex;justify-content:center;margin:8px 0 12px;min-height:22px}
 .modal-price.na{display:none}
+.chat-layout{display:flex;flex-direction:column;gap:12px}
+.chat-select-row{display:flex;gap:8px;align-items:center}
+.chat-box{height:52vh;min-height:320px;overflow:auto;border:1px solid var(--border);border-radius:18px;background:rgba(15,17,23,.45);padding:12px;display:flex;flex-direction:column;gap:10px}
+.chat-msg{max-width:82%;padding:9px 11px;border-radius:16px;background:var(--surface2);border:1px solid var(--border);font-size:13px;line-height:1.35;word-break:break-word}
+.chat-msg.me{align-self:flex-end;background:rgba(99,102,241,.22);border-color:rgba(99,102,241,.4)}
+.chat-msg.other{align-self:flex-start}
+.chat-msg-meta{font-size:10px;color:var(--text2);font-weight:800;margin-bottom:4px}
+.chat-msg img{max-width:100%;border-radius:14px;margin-top:6px;display:block}
+.chat-compose{display:flex;gap:8px;align-items:flex-end}
+.chat-compose textarea{min-height:48px;max-height:120px;resize:vertical}
+.chat-media-preview{display:none;align-items:center;gap:8px;font-size:12px;color:var(--text2);font-weight:800}
+.chat-media-preview img{width:46px;height:46px;object-fit:cover;border-radius:10px;border:1px solid var(--border)}
+
 
 /* ── TOAST ──────────────────────────────────────────── */
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:10px 18px;font-size:14px;font-weight:700;box-shadow:0 8px 24px var(--shadow);transition:transform 0.3s ease;z-index:9999;white-space:nowrap}
@@ -481,6 +494,7 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--text);heig
     <button class="nav-tab" data-tab="scan" id="tabScan" style="display:none;" onclick="switchTab('scan')">📷 Scan</button>
     <button class="nav-tab" data-tab="stock" id="tabStock" onclick="switchTab('stock')">📦 Stock</button>
     <button class="nav-tab" data-tab="transfer" id="tabTransfer" style="display:none;" onclick="switchTab('transfer')">🔄 Transfert</button>
+    <button class="nav-tab" data-tab="messages" id="tabMessages" style="display:none;" onclick="switchTab('messages')">💬 Messages</button>
     <button class="nav-tab" data-tab="vente" id="tabVente" style="display:none;" onclick="switchTab('vente')">🛒 Vente</button>
     <button class="nav-tab" data-tab="history" id="tabHistory" style="display:none;" onclick="switchTab('history')">📜 Historique</button>
     <button class="nav-tab" data-tab="admin" id="tabAdmin" style="display:none;" onclick="switchTab('admin')">⚙️ Gérer</button>
@@ -507,6 +521,7 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--text);heig
   <div class="app-body" id="stockBody" style="display:none;"></div>
   <div class="app-body" id="profileBody" style="display:none;"></div>
   <div class="app-body" id="transferBody" style="display:none;"></div>
+  <div class="app-body" id="messagesBody" style="display:none;"></div>
   <div class="app-body" id="historyBody" style="display:none;"></div>
   <div class="app-body" id="adminBody" style="display:none;"></div>
 </div>
@@ -1074,6 +1089,8 @@ let userProfiles = {};
 let appHistory = [];
 let userFriends = [];
 let friendRequests = [];
+let chatMessages = [];
+let currentChatFriend = '';
 
 function profileKey(user){
   return String(user||'').toLowerCase();
@@ -1133,6 +1150,7 @@ async function saveUserProfile(){
   stockDirty=true;
   if(activeTab==='stock') renderStock();
   if(activeTab==='transfer') renderTransfer();
+  if(activeTab==='messages') renderMessages();
   if(activeTab==='history') renderHistory();
   renderProfile();
   await addHistory('profil', currentUser, '', `Profil modifié : ${pseudo}`);
@@ -1388,6 +1406,7 @@ function enterApp(){
   document.getElementById('tabProfile').style.display = currentUser ? '' : 'none';
   document.getElementById('tabHistory').style.display = currentUser==='anthony' ? '' : 'none';
   document.getElementById('tabTransfer').style.display = currentUser ? '' : 'none';
+  document.getElementById('tabMessages').style.display = currentUser ? '' : 'none';
   document.getElementById('tabVente').style.display = (!currentUser || currentUser==='anthony' || currentUser==='valentin') ? '' : 'none';
   switchTab(currentUser ? 'profile' : 'vente');
   loadData();
@@ -1414,7 +1433,7 @@ function closeAppMenu(){
   if(menu) menu.classList.remove('open');
 }
 function getTabLabel(tab){
-  const labels={profile:'👤 Profil',collection:'📖 Collection',scan:'📷 Scan',stock:'📦 Stock',transfer:'🔄 Transfert',vente:'🛒 Vente',history:'📜 Historique',admin:'⚙️ Gérer'};
+  const labels={profile:'👤 Profil',collection:'📖 Collection',scan:'📷 Scan',stock:'📦 Stock',transfer:'🔄 Transfert',messages:'💬 Messages',vente:'🛒 Vente',history:'📜 Historique',admin:'⚙️ Gérer'};
   return labels[tab]||'Menu';
 }
 function updateCurrentTabLabel(tab){
@@ -1439,6 +1458,7 @@ function switchTab(tab){
   document.getElementById('adminBody').style.display = tab==='admin'      ? '' : 'none';
   document.getElementById('profileBody').style.display = tab==='profile'    ? '' : 'none';
   document.getElementById('transferBody').style.display = tab==='transfer'  ? '' : 'none';
+  document.getElementById('messagesBody').style.display = tab==='messages'  ? '' : 'none';
   document.getElementById('historyBody').style.display = tab==='history'    ? '' : 'none';
   document.getElementById('subheader').style.display = tab==='collection' ? '' : 'none';
   if(tab==='scan'){ renderScan(); }
@@ -1446,6 +1466,7 @@ function switchTab(tab){
   if(tab==='stock' && stockDirty){ renderStock(); stockDirty=false; }
   if(tab==='profile'){ renderProfile(); }
   if(tab==='transfer'){ renderTransfer(); }
+  if(tab==='messages'){ renderMessages(); }
   if(tab==='history'){ loadHistory(); renderHistory(); }
   if(tab==='admin' && adminDirty){ renderAdmin(); adminDirty=false; }
 }
@@ -2504,6 +2525,7 @@ async function deleteMyAccount(){
     await sbDel('user_friends','?friend_key=eq.'+encodeURIComponent(key));
     await sbDel('friend_requests','?from_key=eq.'+encodeURIComponent(key));
     await sbDel('friend_requests','?to_key=eq.'+encodeURIComponent(key));
+    await sbDel('chat_messages','?or=(sender_key.eq.'+encodeURIComponent(key)+',receiver_key.eq.'+encodeURIComponent(key)+')');
     await addHistory('profil', currentUser, '', 'Compte supprimé de l’application');
   }catch(e){}
   delete userProfiles[key];
@@ -2514,6 +2536,163 @@ async function deleteMyAccount(){
   doLogout();
 }
 
+
+
+function chatFriends(){
+  return (userFriends||[]).map(f=>profileKey(f.friend_key)).filter(Boolean);
+}
+function conversationIdFor(a,b){
+  return [profileKey(a), profileKey(b)].sort().join('__');
+}
+function chatFriendOptions(selected=''){
+  const friends=chatFriends();
+  return friends.map(k=>`<option value="${esc(k)}" ${profileKey(selected)===k?'selected':''}>${esc(effectiveUserLabel(k))}</option>`).join('');
+}
+async function loadChatMessages(friendKey){
+  if(!currentUser || !friendKey){ chatMessages=[]; return; }
+  const cid=conversationIdFor(currentUser, friendKey);
+  try{
+    const rows=await sbGet('chat_messages','?select=*&conversation_id=eq.'+encodeURIComponent(cid)+'&order=created_at.asc&limit=200');
+    chatMessages=Array.isArray(rows)?rows:[];
+  }catch(e){ chatMessages=[]; }
+}
+function renderMessageBubble(m){
+  const me=profileKey(m.sender_key)===profileKey(currentUser);
+  const label=me?'Moi':effectiveUserLabel(m.sender_key);
+  const time=m.created_at?new Date(m.created_at).toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'';
+  const img=m.image_url?`<img src="${esc(m.image_url)}" loading="lazy">`:'';
+  const txt=m.body?`<div>${esc(m.body).replace(/\n/g,'<br>')}</div>`:'';
+  return `<div class="chat-msg ${me?'me':'other'}">
+    <div class="chat-msg-meta">${esc(label)} · ${esc(time)}</div>
+    ${txt}${img}
+  </div>`;
+}
+async function renderMessages(){
+  const body=document.getElementById('messagesBody');
+  if(!currentUser){ body.innerHTML='<div class="empty-state"><h3>Connecte-toi</h3></div>'; return; }
+  const friends=chatFriends();
+  if(!friends.length){
+    body.innerHTML=`<div class="section-title">💬 Messages</div>
+      <div class="empty-state"><h3>Aucun ami</h3><p>Ajoute un ami dans Profil pour commencer une discussion.</p></div>`;
+    return;
+  }
+  if(!currentChatFriend || !friends.includes(profileKey(currentChatFriend))) currentChatFriend=friends[0];
+  await loadChatMessages(currentChatFriend);
+  body.innerHTML=`
+    <div class="section-title">💬 Messages</div>
+    <div class="admin-section chat-layout">
+      <div class="chat-select-row">
+        <select class="form-select" id="chatFriendSelect" onchange="currentChatFriend=this.value; renderMessages();">
+          ${chatFriendOptions(currentChatFriend)}
+        </select>
+        <button class="btn-sm" onclick="renderMessages()">↻</button>
+      </div>
+      <div class="chat-box" id="chatBox">
+        ${chatMessages.length?chatMessages.map(renderMessageBubble).join(''):'<div class="empty-state"><h3>Aucun message</h3></div>'}
+      </div>
+      <div class="chat-media-preview" id="chatMediaPreview"></div>
+      <div class="chat-compose">
+        <textarea class="form-input" id="chatText" placeholder="Écrire un message…"></textarea>
+        <input id="chatPhotoInput" type="file" accept="image/*" style="display:none" onchange="prepareChatPhoto(this)">
+        <button class="btn-sm" onclick="document.getElementById('chatPhotoInput').click()">📷</button>
+        <button class="btn-sm" onclick="sendChatMessage()">Envoyer</button>
+      </div>
+    </div>`;
+  setTimeout(()=>{ const box=document.getElementById('chatBox'); if(box) box.scrollTop=box.scrollHeight; },50);
+}
+let pendingChatBlob=null;
+let pendingChatPreviewUrl='';
+function resizeChatImage(file, maxSize=1280, quality=0.84){
+  return new Promise((resolve,reject)=>{
+    const img=new Image();
+    const url=URL.createObjectURL(file);
+    img.onload=()=>{
+      try{
+        let w=img.naturalWidth||img.width, h=img.naturalHeight||img.height;
+        const ratio=Math.min(1, maxSize/Math.max(w,h));
+        const canvas=document.createElement('canvas');
+        canvas.width=Math.round(w*ratio); canvas.height=Math.round(h*ratio);
+        const ctx=canvas.getContext('2d');
+        ctx.drawImage(img,0,0,canvas.width,canvas.height);
+        canvas.toBlob(blob=>{
+          URL.revokeObjectURL(url);
+          if(!blob) reject(new Error('Image impossible à convertir'));
+          else resolve(blob);
+        },'image/jpeg',quality);
+      }catch(e){ URL.revokeObjectURL(url); reject(e); }
+    };
+    img.onerror=()=>{ URL.revokeObjectURL(url); reject(new Error('Image illisible')); };
+    img.src=url;
+  });
+}
+async function prepareChatPhoto(input){
+  const file=input?.files?.[0];
+  if(!file) return;
+  if(!file.type.startsWith('image/')){ showToast('Choisis une image'); return; }
+  try{
+    pendingChatBlob=await resizeChatImage(file);
+    if(pendingChatPreviewUrl) URL.revokeObjectURL(pendingChatPreviewUrl);
+    pendingChatPreviewUrl=URL.createObjectURL(pendingChatBlob);
+    const box=document.getElementById('chatMediaPreview');
+    if(box){
+      box.style.display='flex';
+      box.innerHTML=`<img src="${pendingChatPreviewUrl}"><span>Photo prête</span><button class="btn-sm danger" onclick="clearChatPhoto()">Retirer</button>`;
+    }
+  }catch(e){ showToast('❌ '+e.message); }
+  finally{ if(input) input.value=''; }
+}
+function clearChatPhoto(){
+  pendingChatBlob=null;
+  if(pendingChatPreviewUrl) URL.revokeObjectURL(pendingChatPreviewUrl);
+  pendingChatPreviewUrl='';
+  const box=document.getElementById('chatMediaPreview');
+  if(box){ box.style.display='none'; box.innerHTML=''; }
+}
+async function uploadChatImage(blob, friendKey){
+  const cid=conversationIdFor(currentUser, friendKey);
+  const safe=cid.replace(/[^a-z0-9@._-]+/gi,'_');
+  const path=`${safe}/${Date.now()}.jpg`;
+  const uploadUrl=`${SUPABASE_URL}/storage/v1/object/chat-media/${path}`;
+  const res=await fetch(uploadUrl,{
+    method:'POST',
+    headers:{
+      'apikey':SUPABASE_KEY,
+      'Authorization':'Bearer '+(sbAuthToken||SUPABASE_KEY),
+      'Content-Type':'image/jpeg',
+      'x-upsert':'false'
+    },
+    body:blob
+  });
+  if(!res.ok){
+    const err=await res.json().catch(()=>({message:res.statusText}));
+    throw new Error(err.message || 'Upload image refusé');
+  }
+  return `${SUPABASE_URL}/storage/v1/object/public/chat-media/${path}`;
+}
+async function sendChatMessage(){
+  if(!currentUser || !currentChatFriend){ showToast('Choisis un ami'); return; }
+  const body=(document.getElementById('chatText')?.value||'').trim();
+  if(!body && !pendingChatBlob){ showToast('Message vide'); return; }
+  try{
+    let image_url='';
+    if(pendingChatBlob){
+      showToast('⏳ Envoi de la photo…', 4000);
+      image_url=await uploadChatImage(pendingChatBlob, currentChatFriend);
+    }
+    const row={
+      conversation_id:conversationIdFor(currentUser,currentChatFriend),
+      sender_key:profileKey(currentUser),
+      receiver_key:profileKey(currentChatFriend),
+      body,
+      image_url,
+      created_at:new Date().toISOString()
+    };
+    await sbPost('chat_messages', row);
+    const input=document.getElementById('chatText'); if(input) input.value='';
+    clearChatPhoto();
+    await renderMessages();
+  }catch(e){ showToast('❌ '+e.message); }
+}
 
 function transferPeople(){
   const keys=[];
