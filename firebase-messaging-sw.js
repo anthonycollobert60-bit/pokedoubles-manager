@@ -1,16 +1,14 @@
-/* Firebase Messaging Service Worker - PokeCards Collection
-   Remplace firebaseConfig avec les mêmes valeurs que dans index.html.
-*/
+/* Firebase Messaging Service Worker - PokeCards Collection */
 importScripts('https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/10.12.5/firebase-messaging-compat.js');
 
 const firebaseConfig = {
-  apiKey: "A_REMPLACER",
-  authDomain: "A_REMPLACER.firebaseapp.com",
-  projectId: "A_REMPLACER",
-  storageBucket: "A_REMPLACER.appspot.com",
-  messagingSenderId: "A_REMPLACER",
-  appId: "A_REMPLACER"
+  apiKey: "AIzaSyDk8RyaXWt4cHLot3puOoAn_wF372pt_Qc",
+  authDomain: "pokecards-collection.firebaseapp.com",
+  projectId: "pokecards-collection",
+  storageBucket: "pokecards-collection.firebasestorage.app",
+  messagingSenderId: "890242521469",
+  appId: "1:890242521469:web:1d533eadfa41a143d8d414"
 };
 
 firebase.initializeApp(firebaseConfig);
