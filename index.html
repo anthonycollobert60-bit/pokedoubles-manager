@@ -1275,14 +1275,31 @@ function effectiveUserAvatar(user, size=26){
 function refreshPushButtonState(){
   const btn=document.getElementById('pushPermissionBtn');
   if(!btn) return;
+
+  const enabled = localStorage.getItem('pokecards_push_enabled') === '1';
+
+  if(enabled){
+    btn.textContent='✅ Notifications activées';
+    btn.disabled=false;
+    btn.title='Notifications push activées sur ce téléphone';
+    return;
+  }
+
   if(!('Notification' in window)){
     btn.textContent='🔔 Notifications non supportées ici';
     btn.disabled=false;
     btn.title='Essaie Chrome/Edge Android ou installe l’application en PWA';
-  }else if(Notification.permission==='granted'){
+    return;
+  }
+
+  if(Notification.permission==='granted'){
     btn.textContent='✅ Notifications activées';
+    btn.disabled=false;
+    btn.title='Notifications autorisées sur ce navigateur';
   }else{
     btn.textContent='🔔 Activer les notifications';
+    btn.disabled=false;
+    btn.title='Activer les notifications push sur ce téléphone';
   }
 }
 
@@ -2872,7 +2889,7 @@ async function requestPushPermission(){
   }
   try{
     const permission = await Notification.requestPermission();
-    if(permission !== 'granted'){ showToast('Notifications refusées dans le navigateur'); return; }
+    if(permission !== 'granted'){ localStorage.removeItem('pokecards_push_enabled'); showToast('Notifications refusées dans le navigateur'); refreshPushButtonState(); return; }
     if(!window.PokeCardsFCM){ showToast('Firebase Messaging non chargé'); return; }
     const res = await window.PokeCardsFCM.getToken();
     if(!res.ok || !res.token){
@@ -2880,7 +2897,9 @@ async function requestPushPermission(){
       return;
     }
     await saveFcmToken(res.token);
+    localStorage.setItem('pokecards_push_enabled', '1');
     showToast('✅ Vraies notifications push activées');
+    refreshPushButtonState();
     maybeShowBrowserNotification('PokeCards Collection','Notifications push activées');
   }catch(e){
     showToast('Notifications indisponibles : '+(e.message||e));
