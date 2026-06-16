@@ -461,20 +461,44 @@ import { getMessaging, getToken, onMessage, isSupported } from "https://www.gsta
 window.PokeCardsFCM = {
   async init(){
     if(!window.FCM_ENABLED) return {ok:false, reason:'config'};
-    if(!('serviceWorker' in navigator)) return {ok:false, reason:'sw'};
-    if(!('Notification' in window)) return {ok:false, reason:'notification'};
-    const supported = await isSupported().catch(()=>false);
-    if(!supported) return {ok:false, reason:'unsupported'};
+    if(!('serviceWorker' in navigator)) return {ok:false, reason:'service-worker-non-supporte'};
+    if(!('Notification' in window)) return {ok:false, reason:'notification-non-supportee'};
+    const supported = await isSupported().catch((e)=>false);
+    if(!supported) return {ok:false, reason:'firebase-non-supporte'};
+
     const app = initializeApp(window.FIREBASE_CONFIG);
     const messaging = getMessaging(app);
-    let reg;
+
+    let reg = null;
+    let registerError = null;
+
     try{
-      reg = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+      // Nettoie les anciens service workers qui peuvent bloquer Firebase.
+      const regs = await navigator.serviceWorker.getRegistrations();
+      for(const r of regs){
+        const url = r.active?.scriptURL || r.installing?.scriptURL || r.waiting?.scriptURL || '';
+        if(url && !url.includes('firebase-messaging-sw.js')){
+          try{ await r.unregister(); }catch(e){}
+        }
+      }
+    }catch(e){}
+
+    try{
+      reg = await navigator.serviceWorker.register('/firebase-messaging-sw.js', {
+        scope: '/',
+        updateViaCache: 'none'
+      });
+      await navigator.serviceWorker.ready;
+      try{ await reg.update(); }catch(e){}
     }catch(e){
-      return {ok:false, reason:'sw-register', error:e};
+      registerError = (e && (e.message || e.name || e.code)) ? (e.message || e.name || e.code) : String(e);
+      // Fallback : on laisse Firebase utiliser son enregistrement par défaut.
+      reg = null;
     }
+
     window.__fcmMessaging = messaging;
     window.__fcmRegistration = reg;
+
     onMessage(messaging, (payload)=>{
       try{
         const n = payload.notification || {};
@@ -482,19 +506,20 @@ window.PokeCardsFCM = {
         if(window.loadNotifications) window.loadNotifications();
       }catch(e){}
     });
-    return {ok:true, messaging, reg};
+
+    return {ok:true, messaging, reg, registerError};
   },
   async getToken(){
     const init = await this.init();
     if(!init.ok) return init;
     try{
-      const token = await getToken(init.messaging, {
-        vapidKey: window.FIREBASE_VAPID_KEY,
-        serviceWorkerRegistration: init.reg
-      });
-      return token ? {ok:true, token} : {ok:false, reason:'token-vide'};
+      const options = { vapidKey: window.FIREBASE_VAPID_KEY };
+      if(init.reg) options.serviceWorkerRegistration = init.reg;
+      const token = await getToken(init.messaging, options);
+      return token ? {ok:true, token} : {ok:false, reason:'token-vide', error:init.registerError||''};
     }catch(e){
-      return {ok:false, reason:e.code || 'get-token-error', error:e.message || String(e)};
+      const msg = e?.message || e?.code || String(e);
+      return {ok:false, reason:e?.code || 'get-token-error', error:msg + (init.registerError ? ' / SW: '+init.registerError : '')};
     }
   }
 };
@@ -2851,7 +2876,7 @@ async function requestPushPermission(){
     if(!window.PokeCardsFCM){ showToast('Firebase Messaging non chargé'); return; }
     const res = await window.PokeCardsFCM.getToken();
     if(!res.ok || !res.token){
-      showToast('Token impossible : '+(res.reason||res.error||'raison inconnue'));
+      showToast('Token impossible : '+(res.error||res.reason||'raison inconnue'));
       return;
     }
     await saveFcmToken(res.token);
@@ -2892,7 +2917,7 @@ async function addAppNotification(type, actor, target, title, body, extra={}){
   const row={type,actor:profileKey(actor),target:profileKey(target),title:title||'',body:body||'',extra,read_at:null,created_at:new Date().toISOString()};
   try{ await sbPost('app_notifications', row); }catch(e){}
   try{
-    await fetch(SUPABASE_URL + '/functions/v1/send-push-notification', {
+    let pushRes = await fetch(SUPABASE_URL + '/functions/v1/send-push-notification', {
       method:'POST',
       headers:{
         'Content-Type':'application/json',
@@ -2901,6 +2926,17 @@ async function addAppNotification(type, actor, target, title, body, extra={}){
       },
       body:JSON.stringify({target:profileKey(target), title:title||'PokeCards Collection', body:body||'', type, extra})
     });
+    if(!pushRes.ok){
+      await fetch(SUPABASE_URL + '/functions/v1/envoyer-notification-push', {
+        method:'POST',
+        headers:{
+          'Content-Type':'application/json',
+          'apikey':SUPABASE_KEY,
+          'Authorization':'Bearer '+(sbAuthToken||SUPABASE_KEY)
+        },
+        body:JSON.stringify({target:profileKey(target), title:title||'PokeCards Collection', body:body||'', type, extra})
+      });
+    }
   }catch(e){}
   if(profileKey(target)===profileKey(currentUser)) maybeShowBrowserNotification(title, body);
 }
