@@ -453,6 +453,49 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--text);heig
 
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.1.0/tesseract.min.js"></script>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
+import { getMessaging, getToken, onMessage, isSupported } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-messaging.js";
+
+window.PokeCardsFCM = {
+  async init(){
+    if(!window.FCM_ENABLED) return {ok:false, reason:'config'};
+    if(!('serviceWorker' in navigator)) return {ok:false, reason:'sw'};
+    if(!('Notification' in window)) return {ok:false, reason:'notification'};
+    const supported = await isSupported().catch(()=>false);
+    if(!supported) return {ok:false, reason:'unsupported'};
+    const app = initializeApp(window.FIREBASE_CONFIG);
+    const messaging = getMessaging(app);
+    let reg;
+    try{
+      reg = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+    }catch(e){
+      return {ok:false, reason:'sw-register', error:e};
+    }
+    window.__fcmMessaging = messaging;
+    window.__fcmRegistration = reg;
+    onMessage(messaging, (payload)=>{
+      try{
+        const n = payload.notification || {};
+        if(window.maybeShowBrowserNotification) window.maybeShowBrowserNotification(n.title || 'PokeCards Collection', n.body || '');
+        if(window.loadNotifications) window.loadNotifications();
+      }catch(e){}
+    });
+    return {ok:true, messaging, reg};
+  },
+  async getToken(){
+    const init = await this.init();
+    if(!init.ok) return init;
+    const token = await getToken(init.messaging, {
+      vapidKey: window.FIREBASE_VAPID_KEY,
+      serviceWorkerRegistration: init.reg
+    });
+    return {ok:!!token, token};
+  }
+};
+</script>
+
 </head>
 <body>
 
@@ -524,8 +567,7 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--text);heig
       <button class="icon-btn" id="themeBtn" onclick="toggleTheme()" title="Thème">
         <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
       </button>
-      <button class="icon-btn notif-btn" id="notifBtn" onclick="toggleNotificationCenter()" title="Notifications" style="display:none;">🔔<span class="notif-count" id="notifCount">0</span></button>
-      <button id="venteNotifBadge" onclick="switchTab(\'vente\')" title="Demandes visiteurs" style="display:none;border:none;background:rgba(239,68,68,0.95);color:#fff;border-radius:999px;padding:8px 10px;font-weight:900;font-size:13px;cursor:pointer;align-items:center;gap:6px;box-shadow:0 0 14px rgba(239,68,68,0.35);">🔔 <span id="venteNotifCount">0</span></button>
+      <button class="icon-btn notif-btn" id="notifBtn" onclick="toggleNotificationCenter()" title="Centre de notifications" style="display:none;">🔔<span class="notif-count" id="notifCount">0</span></button>
       <div class="user-chip" onclick="doLogout()">
         <div class="user-dot" id="userDot"></div>
         <span id="userLabel"></span>
@@ -688,6 +730,26 @@ const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZ
 
 const ADMIN_EMAIL = 'anthony.collobert60@gmail.com';
 const VALENTIN_EMAIL = 'blanquetvalentin27190@gmail.com';
+
+/* ══ FIREBASE CLOUD MESSAGING ══════════════════════════
+   Remplace les valeurs ci-dessous par celles de Firebase :
+   Firebase Console → Project settings → General → Your apps → Web app
+   Et VAPID dans : Project settings → Cloud Messaging → Web Push certificates.
+*/
+const FIREBASE_CONFIG = {
+  apiKey: "A_REMPLACER",
+  authDomain: "A_REMPLACER.firebaseapp.com",
+  projectId: "A_REMPLACER",
+  storageBucket: "A_REMPLACER.appspot.com",
+  messagingSenderId: "A_REMPLACER",
+  appId: "A_REMPLACER"
+};
+const FIREBASE_VAPID_KEY = "A_REMPLACER";
+const FCM_ENABLED = FIREBASE_CONFIG.apiKey !== "A_REMPLACER" && FIREBASE_VAPID_KEY !== "A_REMPLACER";
+window.FIREBASE_CONFIG = FIREBASE_CONFIG;
+window.FIREBASE_VAPID_KEY = FIREBASE_VAPID_KEY;
+window.FCM_ENABLED = FCM_ENABLED;
+
 function getStoredAuthValue(key){
   return localStorage.getItem(key) || sessionStorage.getItem(key) || '';
 }
@@ -2460,7 +2522,7 @@ function renderProfile(){
     <div class="admin-section">
       <h3>Mon profil</h3>
       <button class="btn-sm" id="pushPermissionBtn" onclick="requestPushPermission()">🔔 Activer les notifications</button>
-      <span class="cache-fast-note">utile pour messages, amis et transferts</span>
+      <span class="cache-fast-note">à activer une fois sur chaque téléphone</span>
       <div style="font-size:12px;color:var(--text2);margin-bottom:10px;">Ce pseudo remplace l’adresse e-mail dans l’application.</div>
       <div class="form-row">
         <input class="form-input" id="profilePseudo" placeholder="Pseudo" value="${esc(p.pseudo||userDisplayLabel(currentUser))}">
@@ -2773,24 +2835,46 @@ function updateNotificationBadge(){
 }
 async function requestPushPermission(){
   const isSecure = location.protocol === 'https:' || location.hostname === 'localhost';
-  if(!isSecure){
-    showToast('Notifications disponibles uniquement en HTTPS');
-    return;
-  }
-  if(!('Notification' in window)){
-    showToast('Notifications navigateur non supportées ici. Essaie depuis Chrome/Edge Android ou l’app installée.');
+  if(!isSecure){ showToast('Notifications disponibles uniquement en HTTPS'); return; }
+  if(!('Notification' in window)){ showToast('Notifications non supportées dans ce navigateur'); return; }
+  if(!FCM_ENABLED){
+    showToast('Firebase n’est pas encore configuré dans le fichier');
     return;
   }
   try{
-    const res=await Notification.requestPermission();
-    if(res==='granted'){
-      showToast('✅ Notifications activées');
-      maybeShowBrowserNotification('PokeCards Collection','Notifications activées');
-    }else{
-      showToast('Notifications refusées dans le navigateur');
+    const permission = await Notification.requestPermission();
+    if(permission !== 'granted'){ showToast('Notifications refusées dans le navigateur'); return; }
+    if(!window.PokeCardsFCM){ showToast('Firebase Messaging non chargé'); return; }
+    const res = await window.PokeCardsFCM.getToken();
+    if(!res.ok || !res.token){
+      showToast('Impossible de créer le token notification');
+      return;
     }
+    await saveFcmToken(res.token);
+    showToast('✅ Vraies notifications push activées');
+    maybeShowBrowserNotification('PokeCards Collection','Notifications push activées');
   }catch(e){
-    showToast('Notifications indisponibles sur ce navigateur');
+    showToast('Notifications indisponibles : '+(e.message||e));
+  }
+}
+async function saveFcmToken(token){
+  if(!currentUser || !token) return;
+  const row={
+    user_key: profileKey(currentUser),
+    token,
+    user_agent: navigator.userAgent || '',
+    updated_at: new Date().toISOString()
+  };
+  try{
+    await sbPost('fcm_tokens', row);
+  }catch(e){
+    try{
+      await sbPatch('fcm_tokens','?token=eq.'+encodeURIComponent(token),{
+        user_key:profileKey(currentUser),
+        user_agent:navigator.userAgent||'',
+        updated_at:new Date().toISOString()
+      });
+    }catch(_){}
   }
 }
 function maybeShowBrowserNotification(title, body){
@@ -2803,6 +2887,17 @@ function maybeShowBrowserNotification(title, body){
 async function addAppNotification(type, actor, target, title, body, extra={}){
   const row={type,actor:profileKey(actor),target:profileKey(target),title:title||'',body:body||'',extra,read_at:null,created_at:new Date().toISOString()};
   try{ await sbPost('app_notifications', row); }catch(e){}
+  try{
+    await fetch(SUPABASE_URL + '/functions/v1/send-push-notification', {
+      method:'POST',
+      headers:{
+        'Content-Type':'application/json',
+        'apikey':SUPABASE_KEY,
+        'Authorization':'Bearer '+(sbAuthToken||SUPABASE_KEY)
+      },
+      body:JSON.stringify({target:profileKey(target), title:title||'PokeCards Collection', body:body||'', type, extra})
+    });
+  }catch(e){}
   if(profileKey(target)===profileKey(currentUser)) maybeShowBrowserNotification(title, body);
 }
 async function loadNotifications(){
@@ -4248,17 +4343,8 @@ async function loadVenteDemandes(notify){
     if(tab){
       tab.innerHTML = n>0 ? `🛒 Vente <span style="display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 5px;margin-left:4px;border-radius:999px;background:#ef4444;color:#fff;font-size:11px;font-weight:900;">${n}</span>` : '🛒 Vente';
     }
-    const badge=document.getElementById('venteNotifBadge');
-    const count=document.getElementById('venteNotifCount');
-    if(badge && count){
-      if(['anthony','valentin'].includes(currentUser) && n>0){
-        badge.style.display='inline-flex';
-        count.textContent=String(n);
-      } else {
-        badge.style.display='none';
-        count.textContent='0';
-      }
-    }
+    // Ancienne bulle vente supprimée : tout passe par le centre de notifications.
+    loadNotifications().catch(()=>{});
     if(notify && n>venteDemandesLastCount){
       showToast(`🔔 ${n} demande(s) de panier en attente`);
     }
