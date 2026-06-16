@@ -2932,32 +2932,57 @@ function maybeShowBrowserNotification(title, body){
     }
   }catch(e){}
 }
-async function addAppNotification(type, actor, target, title, body, extra={}){
-  const pushTargetKey=profileKey(target).toLowerCase();
-  const row={type,actor:profileKey(actor),target:pushTargetKey,title:title||'',body:body||'',extra,read_at:null,created_at:new Date().toISOString()};
-  try{ await sbPost('app_notifications', row); }catch(e){}
+async function sendPushNotificationTo(target, title, body, type='', extra={}){
+  const pushTargetKey = profileKey(target).toLowerCase();
+  if(!pushTargetKey) return {success:false,error:'target manquant'};
   try{
-    let pushRes = await fetch(SUPABASE_URL + '/functions/v1/send-push-notification', {
+    const res = await fetch(SUPABASE_URL + '/functions/v1/send-push-notification', {
       method:'POST',
       headers:{
         'Content-Type':'application/json',
         'apikey':SUPABASE_KEY,
         'Authorization':'Bearer '+(sbAuthToken||SUPABASE_KEY)
       },
-      body:JSON.stringify({target:pushTargetKey, title:title||'PokeCards Collection', body:body||'', type, extra})
+      body:JSON.stringify({
+        target:pushTargetKey,
+        title:title||'PokeCards Collection',
+        body:body||'',
+        type:type||'',
+        extra:extra||{}
+      })
     });
-    if(!pushRes.ok){
-      await fetch(SUPABASE_URL + '/functions/v1/envoyer-notification-push', {
-        method:'POST',
-        headers:{
-          'Content-Type':'application/json',
-          'apikey':SUPABASE_KEY,
-          'Authorization':'Bearer '+(sbAuthToken||SUPABASE_KEY)
-        },
-        body:JSON.stringify({target:pushTargetKey, title:title||'PokeCards Collection', body:body||'', type, extra})
-      });
+    const txt = await res.text();
+    let json = null;
+    try{ json = txt ? JSON.parse(txt) : null; }catch(_){}
+    if(!res.ok || (json && json.success===false)){
+      console.warn('Push non envoyé', {status:res.status, response:json||txt});
     }
-  }catch(e){}
+    return json || {success:res.ok, status:res.status, response:txt};
+  }catch(e){
+    console.warn('Erreur appel push', e);
+    return {success:false,error:String(e?.message||e)};
+  }
+}
+
+async function addAppNotification(type, actor, target, title, body, extra={}){
+  const pushTargetKey=profileKey(target).toLowerCase();
+  const row={
+    type,
+    actor:profileKey(actor).toLowerCase(),
+    target:pushTargetKey,
+    title:title||'',
+    body:body||'',
+    extra,
+    read_at:null,
+    created_at:new Date().toISOString()
+  };
+
+  try{ await sbPost('app_notifications', row); }catch(e){ console.warn('app_notifications non créé', e); }
+
+  // Important : l’envoi push ne dépend PAS du téléphone de l’expéditeur.
+  // Seul le destinataire doit avoir activé les notifications et avoir un token dans fcm_tokens.
+  await sendPushNotificationTo(pushTargetKey, title||'PokeCards Collection', body||'', type, extra);
+
   if(profileKey(target)===profileKey(currentUser)) maybeShowBrowserNotification(title, body);
 }
 async function loadNotifications(){
