@@ -2907,24 +2907,33 @@ async function requestPushPermission(){
 }
 async function saveFcmToken(token){
   if(!currentUser || !token) return;
+  const userKey = profileKey(currentUser).toLowerCase();
+
+  // Garde un seul token actif par compte pour éviter les notifications doublées.
+  try{
+    await sbDel('fcm_tokens','?user_key=eq.'+encodeURIComponent(userKey)+'&token=neq.'+encodeURIComponent(token));
+  }catch(e){}
+
   const row={
-    user_key:profileKey(currentUser).toLowerCase(),
+    user_key:userKey,
     token,
     user_agent: navigator.userAgent || '',
     updated_at: new Date().toISOString()
   };
+
   try{
     await sbPost('fcm_tokens', row);
   }catch(e){
     try{
       await sbPatch('fcm_tokens','?token=eq.'+encodeURIComponent(token),{
-        user_key:profileKey(currentUser).toLowerCase(),
+        user_key:userKey,
         user_agent:navigator.userAgent||'',
         updated_at:new Date().toISOString()
       });
     }catch(_){}
   }
 }
+
 function maybeShowBrowserNotification(title, body){
   try{
     if('Notification' in window && Notification.permission==='granted' && document.hidden){
@@ -2932,9 +2941,22 @@ function maybeShowBrowserNotification(title, body){
     }
   }catch(e){}
 }
+const recentPushEvents = new Map();
+function shouldSkipDuplicatePush(target, title, body, type){
+  const key=[profileKey(target).toLowerCase(), String(type||''), String(title||''), String(body||'')].join('|');
+  const now=Date.now();
+  const last=recentPushEvents.get(key)||0;
+  recentPushEvents.set(key, now);
+  return now-last < 8000;
+}
+
 async function sendPushNotificationTo(target, title, body, type='', extra={}){
   const pushTargetKey = profileKey(target).toLowerCase();
   if(!pushTargetKey) return {success:false,error:'target manquant'};
+  if(shouldSkipDuplicatePush(pushTargetKey, title, body, type)){
+    console.warn('Push ignoré : doublon récent', {target:pushTargetKey,type,title,body});
+    return {success:false, skipped:true, reason:'duplicate'};
+  }
   try{
     const res = await fetch(SUPABASE_URL + '/functions/v1/send-push-notification', {
       method:'POST',
@@ -2983,7 +3005,7 @@ async function addAppNotification(type, actor, target, title, body, extra={}){
   // Seul le destinataire doit avoir activé les notifications et avoir un token dans fcm_tokens.
   await sendPushNotificationTo(pushTargetKey, title||'PokeCards Collection', body||'', type, extra);
 
-  if(profileKey(target)===profileKey(currentUser)) maybeShowBrowserNotification(title, body);
+  // Pas de notification locale ici : Firebase gère déjà le push, cela évite les doublons.
 }
 async function loadNotifications(){
   if(!currentUser){ appNotifications=[]; unreadNotificationCount=0; updateNotificationBadge(); return; }
