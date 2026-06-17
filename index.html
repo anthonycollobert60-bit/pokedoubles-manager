@@ -1731,6 +1731,7 @@ function switchTab(tab){
 
 
 
+
 /* ══ REPORTS BUGS / AMÉLIORATIONS ═════════════════════ */
 function reportThemeLabel(v){
   return ({
@@ -1749,7 +1750,16 @@ function reportThemeLabel(v){
 
 function reportIsClosed(r){
   const extra=r.extra||{};
-  return !!extra.closed_at || !!extra.close_message;
+  return !!extra.closed_at || extra.status==='closed' || !!extra.close_message;
+}
+
+function makeReportEventId(theme,title,body){
+  return [
+    profileKey(currentUser).toLowerCase(),
+    String(theme||''),
+    String(title||'').trim().toLowerCase(),
+    String(body||'').trim().toLowerCase()
+  ].join('|').slice(0,900);
 }
 
 async function submitReport(){
@@ -1765,20 +1775,46 @@ async function submitReport(){
   const sender=effectiveUserLabel(currentUser);
   const reportTitle='🚨 Nouveau report : '+title;
   const reportBody=`${sender} a envoyé un report (${reportThemeLabel(theme)}) : ${body}`;
+  const eventId=makeReportEventId(theme,title,body);
 
-  // Envoie une notification à Anthony + crée le report dans l'onglet Reports.
-  await addAppNotification('report', currentUser, 'anthony', reportTitle, reportBody, {
-    theme,
-    report_title:title,
-    report_body:body,
-    from:profileKey(currentUser).toLowerCase(),
-    status:'open'
-  });
+  const lockKey='report_submit_lock_'+eventId;
+  const last=Number(sessionStorage.getItem(lockKey)||0);
+  if(Date.now()-last < 15000){
+    showToast('Report déjà envoyé');
+    return;
+  }
+  sessionStorage.setItem(lockKey, String(Date.now()));
 
-  document.getElementById('reportTitle').value='';
-  document.getElementById('reportBodyText').value='';
-  showToast('✅ Report envoyé à Anthony');
-  renderReports();
+  try{
+    const existing=await sbGet(
+      'app_notifications',
+      '?select=id&limit=1&type=eq.report&target=eq.anthony&actor=eq.'+
+      encodeURIComponent(profileKey(currentUser).toLowerCase())+
+      '&title=eq.'+encodeURIComponent(reportTitle)
+    ).catch(()=>[]);
+
+    if(existing && existing.length){
+      showToast('Report déjà envoyé');
+      return;
+    }
+
+    await addAppNotification('report', currentUser, 'anthony', reportTitle, reportBody, {
+      theme,
+      report_title:title,
+      report_body:body,
+      from:profileKey(currentUser).toLowerCase(),
+      status:'open',
+      client_event_id:eventId
+    });
+
+    document.getElementById('reportTitle').value='';
+    document.getElementById('reportBodyText').value='';
+    showToast('✅ Report envoyé à Anthony');
+    renderReports();
+  }catch(e){
+    console.error(e);
+    showToast('Impossible d’envoyer le report');
+  }
 }
 
 async function closeReport(reportId){
@@ -1789,6 +1825,11 @@ async function closeReport(reportId){
 
   const report=appReports.find(r=>String(r.id)===String(reportId));
   if(!report){ showToast('Report introuvable'); return; }
+
+  if(reportIsClosed(report)){
+    showToast('Report déjà clôturé');
+    return;
+  }
 
   const extra={...(report.extra||{})};
   extra.status='closed';
@@ -1805,8 +1846,8 @@ async function closeReport(reportId){
     const target=profileKey(report.actor||extra.from||'').toLowerCase();
     const originalTitle=extra.report_title || String(report.title||'').replace(/^🚨?\s*Nouveau report\s*:\s*/,'') || 'Report';
 
-    // Notification envoyée à la personne qui a créé le report.
     if(target && target!=='anthony'){
+      const closeEventId='report_closed_'+reportId;
       await addAppNotification(
         'report_closed',
         'anthony',
@@ -1814,10 +1855,11 @@ async function closeReport(reportId){
         '🚨 Report clôturé : '+originalTitle,
         msg,
         {
-          report_id:reportId,
+          report_id:String(reportId),
           report_title:originalTitle,
           close_message:msg,
-          status:'closed'
+          status:'closed',
+          client_event_id:closeEventId
         }
       );
     }
