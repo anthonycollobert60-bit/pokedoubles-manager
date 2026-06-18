@@ -8,7 +8,7 @@
 <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png?v=20260618-final-icon">
 <link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png?v=20260618-final-icon">
 <link rel="shortcut icon" type="image/png" href="/icon-192.png?v=20260618-final-icon">
-<link rel="apple-touch-icon" href="/apple-touch-icon.png?v=2">
+<link rel="apple-touch-icon" href="/icon-512.png?v=20260618-final-icon">
 <meta name="theme-color" content="#6366f1">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -471,6 +471,36 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--text);heig
 .report-close-box{margin-top:12px;padding-top:12px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:8px}
 .report-closed{background:rgba(34,197,94,.10);border:1px solid rgba(34,197,94,.35);border-radius:12px;padding:10px;margin-top:10px}
 .report-close-text{font-size:13px;color:var(--text);white-space:pre-wrap}
+
+
+/* ── MESSENGER CHAT ─────────────────────────────────── */
+.messenger-layout{display:flex;flex-direction:column;gap:12px}
+.conversation-list{display:flex;flex-direction:column;gap:10px}
+.conversation-item{display:flex;align-items:center;gap:12px;padding:12px;border-radius:18px;background:var(--surface);border:1px solid var(--border);box-shadow:0 10px 24px var(--shadow);cursor:pointer}
+.conversation-item:active{transform:scale(.99)}
+.conversation-avatar{width:46px;height:46px;border-radius:50%;display:flex;align-items:center;justify-content:center;overflow:hidden;background:var(--surface2);border:1px solid var(--border);flex:0 0 auto}
+.conversation-main{min-width:0;flex:1}
+.conversation-top{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.conversation-name{font-size:16px;font-weight:900;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.conversation-time{font-size:11px;color:var(--text2);font-weight:800;white-space:nowrap}
+.conversation-preview{margin-top:3px;font-size:13px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.conversation-badge{min-width:21px;height:21px;border-radius:999px;background:#ef4444;color:white;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:900;margin-left:6px}
+.chat-header{display:flex;align-items:center;gap:10px;padding:10px 4px 12px;border-bottom:1px solid var(--border)}
+.chat-header-name{font-size:18px;font-weight:900;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chat-back-btn{border:1px solid var(--border);background:var(--surface2);color:var(--text);border-radius:12px;padding:8px 10px;font-weight:900}
+.new-conv-title{font-size:13px;font-weight:900;color:var(--text2);margin:6px 4px}
+
+
+.new-conv-btn{width:38px;height:38px;border-radius:50%;border:none;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;font-size:22px;font-weight:900;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 18px var(--glow);cursor:pointer}
+.conv-title-row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}
+.friend-picker{display:none;position:fixed;inset:0;z-index:1500;background:rgba(0,0,0,.65);backdrop-filter:blur(4px);padding:20px;align-items:flex-end}
+.friend-picker.open{display:flex}
+.friend-picker-card{width:100%;max-width:520px;margin:0 auto;background:var(--surface);border:1px solid var(--border);border-radius:24px 24px 18px 18px;padding:16px;box-shadow:0 24px 60px var(--shadow);max-height:75vh;overflow:auto}
+.friend-picker-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}
+.friend-picker-title{font-size:18px;font-weight:900}
+.friend-picker-list{display:flex;flex-direction:column;gap:8px}
+.friend-picker-item{display:flex;align-items:center;gap:12px;padding:12px;border-radius:16px;background:var(--surface2);border:1px solid var(--border);cursor:pointer}
+.friend-picker-item:active{transform:scale(.99)}
 
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.1.0/tesseract.min.js"></script>
@@ -1699,6 +1729,7 @@ function updateCurrentTabLabel(tab){
 
 function switchTab(tab){
   closeNotificationCenter();
+  if(tab==='messages') currentChatFriend='';
   if(!currentUser && tab!=='vente') tab='vente';
   if(currentUser && !['anthony','valentin'].includes(currentUser) && tab==='vente') tab='collection';
   if(currentUser!=='anthony' && (tab==='admin' || tab==='history')) tab=currentUser?'collection':'vente';
@@ -3477,6 +3508,178 @@ function renderMessageBubble(m){
     ${picker}
   </div>`;
 }
+
+async function getConversationSummaries(){
+  const friends=chatFriends();
+  const rows=[];
+  for(const friend of friends){
+    const cid=conversationIdFor(currentUser, friend);
+    let messages=[];
+    try{
+      const r=await sbGet('chat_messages','?select=*&conversation_id=eq.'+encodeURIComponent(cid)+'&order=created_at.desc&limit=1');
+      messages=Array.isArray(r)?r:[];
+    }catch(e){ messages=[]; }
+
+    let unread=0;
+    try{
+      const u=await sbGet(
+        'chat_messages',
+        '?select=id&conversation_id=eq.'+encodeURIComponent(cid)+
+        '&receiver_key=eq.'+encodeURIComponent(profileKey(currentUser))+
+        '&read_at=is.null&limit=100'
+      );
+      unread=Array.isArray(u)?u.length:0;
+    }catch(e){ unread=0; }
+
+    const last=messages[0]||null;
+    rows.push({friend,last,unread});
+  }
+
+  rows.sort((a,b)=>{
+    const da=a.last?.created_at ? new Date(a.last.created_at).getTime() : 0;
+    const db=b.last?.created_at ? new Date(b.last.created_at).getTime() : 0;
+    return db-da;
+  });
+  return rows;
+}
+
+function formatConversationTime(dateStr){
+  if(!dateStr) return '';
+  const d=new Date(dateStr);
+  const now=new Date();
+  const sameDay=d.toDateString()===now.toDateString();
+  if(sameDay) return d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
+  return d.toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'});
+}
+
+function conversationPreview(last){
+  if(!last) return 'Nouvelle conversation';
+  if(last.card_id) return '🃏 Carte partagée';
+  if(last.image_url) return '📷 Photo';
+  const txt=String(last.body||'').trim();
+  return txt || 'Message';
+}
+
+function openConversation(friendKey){
+  currentChatFriend=profileKey(friendKey);
+  renderMessages();
+}
+
+function backToConversationList(){
+  currentChatFriend='';
+  chatMessages=[];
+  chatReactions={};
+  renderMessages();
+}
+
+
+function openNewConversationPicker(){
+  const friends=chatFriends();
+  let picker=document.getElementById('newConversationPicker');
+  if(!picker){
+    picker=document.createElement('div');
+    picker.id='newConversationPicker';
+    picker.className='friend-picker';
+    picker.addEventListener('click', (e)=>{ if(e.target===picker) closeNewConversationPicker(); });
+    document.body.appendChild(picker);
+  }
+
+  picker.innerHTML=`
+    <div class="friend-picker-card">
+      <div class="friend-picker-head">
+        <div class="friend-picker-title">➕ Nouvelle conversation</div>
+        <button class="modal-close" onclick="closeNewConversationPicker()">×</button>
+      </div>
+      <input class="form-input" id="newConversationSearch" placeholder="🔍 Rechercher un ami…" oninput="renderNewConversationFriends()" autocomplete="off" style="margin-bottom:10px">
+      <div class="friend-picker-list" id="newConversationFriends"></div>
+    </div>
+  `;
+  picker.classList.add('open');
+  renderNewConversationFriends();
+  setTimeout(()=>document.getElementById('newConversationSearch')?.focus(),80);
+}
+
+function closeNewConversationPicker(){
+  const picker=document.getElementById('newConversationPicker');
+  if(picker) picker.classList.remove('open');
+}
+
+function renderNewConversationFriends(){
+  const list=document.getElementById('newConversationFriends');
+  if(!list) return;
+  const q=(document.getElementById('newConversationSearch')?.value||'').toLowerCase().trim();
+  const friends=chatFriends().filter(f=>effectiveUserLabel(f).toLowerCase().includes(q) || profileKey(f).toLowerCase().includes(q));
+
+  if(!friends.length){
+    list.innerHTML='<div class="empty-state"><h3>Aucun ami trouvé</h3></div>';
+    return;
+  }
+
+  list.innerHTML=friends.map(friend=>`
+    <div class="friend-picker-item" onclick="startConversationWith('${esc(friend)}')">
+      <div class="conversation-avatar">${effectiveUserAvatar(friend,42)}</div>
+      <div class="conversation-main">
+        <div class="conversation-name">${esc(effectiveUserLabel(friend))}</div>
+        <div class="conversation-preview">Démarrer ou ouvrir la conversation</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function startConversationWith(friendKey){
+  closeNewConversationPicker();
+  openConversation(friendKey);
+}
+
+async function renderConversationList(){
+  const body=document.getElementById('messagesBody');
+  const friends=chatFriends();
+  if(!friends.length){
+    body.innerHTML=`<div class="section-title">💬 Messages</div>
+      <div class="empty-state"><h3>Aucun ami</h3><p>Ajoute un ami dans Profil pour commencer une discussion.</p></div>`;
+    return;
+  }
+
+  body.innerHTML=`
+    <div class="conv-title-row">
+      <div class="section-title" style="margin-bottom:0">💬 Messages</div>
+      <button class="new-conv-btn" onclick="openNewConversationPicker()" title="Nouvelle conversation">+</button>
+    </div>
+    <div class="admin-section messenger-layout">
+      <div class="new-conv-title">Conversations</div>
+      <div id="conversationList" class="conversation-list">
+        <div class="loading"><div class="spinner"></div><span>Chargement des conversations…</span></div>
+      </div>
+    </div>
+  `;
+
+  const list=document.getElementById('conversationList');
+  const rows=await getConversationSummaries();
+  if(!list) return;
+
+  list.innerHTML=rows.map(r=>{
+    const friend=r.friend;
+    const last=r.last;
+    const name=effectiveUserLabel(friend);
+    const avatar=effectiveUserAvatar(friend,42);
+    const preview=conversationPreview(last);
+    const time=formatConversationTime(last?.created_at);
+    const badge=r.unread>0?`<span class="conversation-badge">${r.unread>99?'99+':r.unread}</span>`:'';
+    return `
+      <div class="conversation-item" onclick="openConversation('${esc(friend)}')">
+        <div class="conversation-avatar">${avatar}</div>
+        <div class="conversation-main">
+          <div class="conversation-top">
+            <div class="conversation-name">${esc(name)}${badge}</div>
+            <div class="conversation-time">${esc(time)}</div>
+          </div>
+          <div class="conversation-preview">${esc(preview)}</div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
 async function renderMessages(){
   const body=document.getElementById('messagesBody');
   if(!currentUser){ body.innerHTML='<div class="empty-state"><h3>Connecte-toi</h3></div>'; return; }
@@ -3486,24 +3689,35 @@ async function renderMessages(){
       <div class="empty-state"><h3>Aucun ami</h3><p>Ajoute un ami dans Profil pour commencer une discussion.</p></div>`;
     return;
   }
+
+  // Mode Messenger : par défaut on affiche la liste des conversations.
+  if(!currentChatFriend || !friends.includes(profileKey(currentChatFriend))){
+    currentChatFriend='';
+    await renderConversationList();
+    return;
+  }
+
   const previousChatText=document.getElementById('chatText')?.value||'';
   const previousCardSearch=document.getElementById('chatCardSearch')?.value||'';
   const wasPickerOpen=document.getElementById('chatCardPicker')?.classList.contains('open')||false;
-  if(!currentChatFriend || !friends.includes(profileKey(currentChatFriend))) currentChatFriend=friends[0];
+
   await loadChatMessages(currentChatFriend);
   await markConversationAsRead(currentChatFriend);
+
   body.innerHTML=`
     <div class="section-title">💬 Messages</div>
     <div class="admin-section chat-layout">
-      <div class="chat-select-row">
-        <select class="form-select" id="chatFriendSelect" onchange="currentChatFriend=this.value; renderMessages();">
-          ${chatFriendOptions(currentChatFriend)}
-        </select>
+      <div class="chat-header">
+        <button class="chat-back-btn" onclick="backToConversationList()">←</button>
+        <div class="conversation-avatar">${effectiveUserAvatar(currentChatFriend,42)}</div>
+        <div class="chat-header-name">${esc(effectiveUserLabel(currentChatFriend))}</div>
         <button class="btn-sm" onclick="renderMessages()">↻</button>
       </div>
+
       <div class="chat-box" id="chatBox">
-        ${chatMessages.length?chatMessages.map(renderMessageBubble).join(''):'<div class="empty-state"><h3>Aucun message</h3></div>'}
+        ${chatMessages.length?chatMessages.map(renderMessageBubble).join(''):'<div class="empty-state"><h3>Aucun message</h3><p>Écris le premier message.</p></div>'}
       </div>
+
       <div class="chat-card-picker" id="chatCardPicker">
         <div style="display:flex;gap:8px;align-items:center;">
           <input class="form-input" id="chatCardSearch" placeholder="🔍 Rechercher une carte par nom, numéro ou collection…" oninput="renderChatCardSearchResults()" autocomplete="off">
@@ -3511,7 +3725,9 @@ async function renderMessages(){
         </div>
         <div class="chat-card-results" id="chatCardResults"></div>
       </div>
+
       <div class="chat-media-preview" id="chatMediaPreview"></div>
+
       <div class="chat-compose">
         <textarea class="form-input" id="chatText" placeholder="Écrire un message…"></textarea>
         <input id="chatPhotoInput" type="file" accept="image/*" style="display:none" onchange="prepareChatPhoto(this)">
@@ -3520,17 +3736,21 @@ async function renderMessages(){
         <button class="btn-sm" onclick="sendChatMessage()">Envoyer</button>
       </div>
     </div>`;
+
   const txt=document.getElementById('chatText');
   if(txt && previousChatText) txt.value=previousChatText;
+
   if(wasPickerOpen){
     const picker=document.getElementById('chatCardPicker');
     const input=document.getElementById('chatCardSearch');
     if(picker) picker.classList.add('open');
     if(input){ input.value=previousCardSearch; renderChatCardSearchResults(); setTimeout(()=>input.focus(),50); }
   }
+
   refreshChatPendingPreview();
   setTimeout(()=>{ const box=document.getElementById('chatBox'); if(box) box.scrollTop=box.scrollHeight; },50);
 }
+
 let pendingChatBlob=null;
 let pendingChatPreviewUrl='';
 function resizeChatImage(file, maxSize=1280, quality=0.84){
