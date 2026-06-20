@@ -3327,7 +3327,7 @@ function shouldSkipDuplicatePush(target, title, body, type){
 
 const groupedPushTimers = {};
 const groupedPushData = {};
-const recentPushEvents = typeof recentPushEvents !== 'undefined' ? recentPushEvents : new Map();
+const recentPushEvents = new Map();
 function shouldSkipDuplicatePush(target, title, body, type, extra={}){
   const extraKey = extra && (extra.client_event_id || extra.report_id) ? (extra.client_event_id || extra.report_id) : '';
   const key=[profileKey(target).toLowerCase(), String(type||''), String(title||''), String(body||''), String(extraKey||'')].join('|');
