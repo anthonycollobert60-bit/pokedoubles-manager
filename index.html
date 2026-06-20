@@ -502,6 +502,16 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--text);heig
 .friend-picker-item{display:flex;align-items:center;gap:12px;padding:12px;border-radius:16px;background:var(--surface2);border:1px solid var(--border);cursor:pointer}
 .friend-picker-item:active{transform:scale(.99)}
 
+
+/* ── AMÉLIORATIONS V2 ───────────────────────────────── */
+.report-status-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.report-status-btn{padding:7px 10px;border-radius:999px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:12px;font-weight:900;cursor:pointer}
+.report-status-btn.active{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;border-color:transparent}
+.report-status-open{background:rgba(239,68,68,.12);border-color:rgba(239,68,68,.35)}
+.report-status-progress{background:rgba(245,158,11,.12);border-color:rgba(245,158,11,.35)}
+.report-status-closed{background:rgba(34,197,94,.12);border-color:rgba(34,197,94,.35)}
+.vente-saved-cart{background:rgba(99,102,241,.10);border:1px solid rgba(99,102,241,.35);border-radius:14px;padding:12px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;gap:10px}
+
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.1.0/tesseract.min.js"></script>
 
@@ -1764,7 +1774,38 @@ function switchTab(tab){
 
 
 
+
+/* ══ VENTE AMÉLIORÉE : PANIER SAUVEGARDÉ ═════════════ */
+function venteCartStorageKey(){return 'pokecards_saved_cart_'+profileKey(currentUser||'visitor');}
+function saveVenteCartLocal(){try{if(typeof venteCart!=='undefined') localStorage.setItem(venteCartStorageKey(), JSON.stringify(venteCart||{}));}catch(e){}}
+function loadVenteCartLocal(){try{if(typeof venteCart!=='undefined'){const raw=localStorage.getItem(venteCartStorageKey());if(raw){const parsed=JSON.parse(raw);if(parsed&&typeof parsed==='object') venteCart=parsed;}}}catch(e){}}
+function clearVenteCartLocal(){try{localStorage.removeItem(venteCartStorageKey());}catch(e){}}
+
+
 /* ══ REPORTS BUGS / AMÉLIORATIONS ═════════════════════ */
+function reportStatusLabel(v){return ({open:'🚨 Ouvert',progress:'🟡 En cours',closed:'✅ Résolu'})[v]||'🚨 Ouvert';}
+async function updateReportStatus(reportId,status){
+  if(profileKey(currentUser)!=='anthony'){showToast('Action réservée à Anthony');return;}
+  const report=appReports.find(r=>String(r.id)===String(reportId));
+  if(!report){showToast('Report introuvable');return;}
+  const extra={...(report.extra||{})};
+  extra.status=status; extra.status_updated_at=new Date().toISOString(); extra.status_updated_by=profileKey(currentUser).toLowerCase();
+  if(status==='closed'){
+    const msg=(document.getElementById('closeReportMsg_'+reportId)?.value||'').trim();
+    if(!msg){showToast('Ajoute une phrase de clôture');return;}
+    extra.closed_at=new Date().toISOString(); extra.close_message=msg; extra.closed_by=profileKey(currentUser).toLowerCase();
+  }
+  await sbPatch('app_notifications','?id=eq.'+encodeURIComponent(reportId),{extra, read_at:report.read_at||null});
+  const target=profileKey(report.actor||extra.from||'').toLowerCase();
+  const originalTitle=extra.report_title || String(report.title||'').replace(/^🚨?\s*Nouveau report\s*:\s*/,'') || 'Report';
+  if(target && target!=='anthony'){
+    await addAppNotification(status==='closed'?'report_closed':'report_status','anthony',target,status==='closed'?'🚨 Report clôturé : '+originalTitle:'🚨 Report mis à jour : '+originalTitle,status==='closed'?(extra.close_message||'Report clôturé'):'Statut : '+reportStatusLabel(status),{report_id:String(reportId),report_title:originalTitle,status,close_message:extra.close_message||'',client_event_id:'report_'+status+'_'+reportId});
+  }
+  showToast(status==='closed'?'✅ Report clôturé':'✅ Statut mis à jour');
+  renderReports();
+}
+async function closeReport(reportId){return updateReportStatus(reportId,'closed');}
+
 function reportThemeLabel(v){
   return ({
     bug:'Bug',
@@ -1990,7 +2031,7 @@ async function renderReports(){
       <div class="report-item">
         <div class="report-item-head">
           <div>
-            <span class="report-pill">${closed?'✅ Clôturé':'🚨 Ouvert'}</span>
+            <span class="report-pill">${esc(reportStatusLabel(extra.status||(closed?'closed':'open')))}</span>
             <span class="report-pill">${esc(theme)}</span>
             <div class="report-title">${esc(title)}</div>
             <div class="report-meta">Par ${esc(actor)} · ${esc(date)}</div>
@@ -2006,11 +2047,15 @@ async function renderReports(){
         ` : ''}
 
         ${isAdmin && !closed ? `
+          <div class="report-status-row">
+            <button class="report-status-btn ${(extra.status||'open')==='open'?'active':''}" onclick="updateReportStatus('${esc(String(r.id))}','open')">🚨 Ouvert</button>
+            <button class="report-status-btn ${extra.status==='progress'?'active':''}" onclick="updateReportStatus('${esc(String(r.id))}','progress')">🟡 En cours</button>
+          </div>
           <div class="report-close-box">
             <label class="report-label">Phrase de clôture
               <textarea class="form-input" id="closeReportMsg_${esc(String(r.id))}" placeholder="Ex : Bug résolu, merci pour le signalement."></textarea>
             </label>
-            <button class="btn-primary" onclick="closeReport('${esc(String(r.id))}')">✅ Clôturer le report</button>
+            <button class="btn-primary" onclick="closeReport('${esc(String(r.id))}')">✅ Clôturer / Résolu</button>
           </div>
         ` : ''}
       </div>
@@ -3280,40 +3325,69 @@ function shouldSkipDuplicatePush(target, title, body, type){
   return now-last < 8000;
 }
 
+const groupedPushTimers = {};
+const groupedPushData = {};
+const recentPushEvents = typeof recentPushEvents !== 'undefined' ? recentPushEvents : new Map();
+function shouldSkipDuplicatePush(target, title, body, type, extra={}){
+  const extraKey = extra && (extra.client_event_id || extra.report_id) ? (extra.client_event_id || extra.report_id) : '';
+  const key=[profileKey(target).toLowerCase(), String(type||''), String(title||''), String(body||''), String(extraKey||'')].join('|');
+  const now=Date.now();
+  const last=recentPushEvents.get(key)||0;
+  recentPushEvents.set(key, now);
+  return now-last < 12000;
+}
+
 async function sendPushNotificationTo(target, title, body, type='', extra={}){
   const pushTargetKey = profileKey(target).toLowerCase();
   if(!pushTargetKey) return {success:false,error:'target manquant'};
-  if(shouldSkipDuplicatePush(pushTargetKey, title, body, type)){
-    console.warn('Push ignoré : doublon récent', {target:pushTargetKey,type,title,body});
+  if(shouldSkipDuplicatePush(pushTargetKey, title, body, type, extra)){
     return {success:false, skipped:true, reason:'duplicate'};
   }
+
+  const groupable=['message','chat','friend_request','transfer','report','report_closed','report_status'];
+  const normalizedType=String(type||'');
+  if(groupable.includes(normalizedType)){
+    const key=pushTargetKey+'|'+normalizedType+'|'+String(extra?.from||extra?.actor||'');
+    groupedPushData[key]=groupedPushData[key]||{count:0,target:pushTargetKey,title,body,type:normalizedType,extra};
+    groupedPushData[key].count++;
+    groupedPushData[key].title=title;
+    groupedPushData[key].body=body;
+    groupedPushData[key].extra={...(groupedPushData[key].extra||{}), ...(extra||{})};
+
+    clearTimeout(groupedPushTimers[key]);
+    groupedPushTimers[key]=setTimeout(async ()=>{
+      const g=groupedPushData[key];
+      delete groupedPushData[key];
+      delete groupedPushTimers[key];
+
+      let finalTitle=g.title||'PokeCards Collection';
+      let finalBody=g.body||'';
+      if(g.count>1){
+        if(g.type==='message' || g.type==='chat'){ finalTitle='💬 '+g.count+' nouveaux messages'; finalBody='Ouvre PokeCards pour les lire.'; }
+        else if(g.type==='report'){ finalTitle='🚨 '+g.count+' nouveaux reports'; finalBody='Ouvre l’onglet Reports pour les consulter.'; }
+        else if(g.type==='friend_request'){ finalTitle='👥 '+g.count+' demandes d’ami'; finalBody='Ouvre PokeCards pour répondre.'; }
+        else if(g.type==='transfer'){ finalTitle='📦 '+g.count+' transferts reçus'; finalBody='Ouvre PokeCards pour les consulter.'; }
+      }
+      await sendPushNotificationNow(g.target, finalTitle, finalBody, g.type, g.extra||{});
+    }, 1800);
+    return {success:true, grouped:true};
+  }
+
+  return sendPushNotificationNow(pushTargetKey, title, body, normalizedType, extra);
+}
+
+async function sendPushNotificationNow(target, title, body, type='', extra={}){
   try{
     const res = await fetch(SUPABASE_URL + '/functions/v1/send-push-notification', {
       method:'POST',
-      headers:{
-        'Content-Type':'application/json',
-        'apikey':SUPABASE_KEY,
-        'Authorization':'Bearer '+(sbAuthToken||SUPABASE_KEY)
-      },
-      body:JSON.stringify({
-        target:pushTargetKey,
-        title:title||'PokeCards Collection',
-        body:body||'',
-        type:type||'',
-        extra:extra||{}
-      })
+      headers:{'Content-Type':'application/json','apikey':SUPABASE_KEY,'Authorization':'Bearer '+(sbAuthToken||SUPABASE_KEY)},
+      body:JSON.stringify({target:profileKey(target).toLowerCase(), title:title||'PokeCards Collection', body:body||'', type:type||'', extra:extra||{}})
     });
     const txt = await res.text();
     let json = null;
     try{ json = txt ? JSON.parse(txt) : null; }catch(_){}
-    if(!res.ok || (json && json.success===false)){
-      console.warn('Push non envoyé', {status:res.status, response:json||txt});
-    }
     return json || {success:res.ok, status:res.status, response:txt};
-  }catch(e){
-    console.warn('Erreur appel push', e);
-    return {success:false,error:String(e?.message||e)};
-  }
+  }catch(e){ return {success:false,error:String(e?.message||e)}; }
 }
 
 async function addAppNotification(type, actor, target, title, body, extra={}){
@@ -4709,6 +4783,7 @@ function ventePrice(carteId, rarete){
 
 
 function renderVente(){
+  loadVenteCartLocal();
   const body=document.getElementById('venteBody');
   if(!body) return;
   let list=venteCards(); // lignes {card, rarete, qty}
@@ -4902,7 +4977,7 @@ function closeVenteCart(){
 }
 
 function clearVenteCart(){
-  venteCart={};
+  venteCart={}; clearVenteCartLocal();
   closeVenteCart();
   renderVente();
 }
@@ -4950,7 +5025,7 @@ async function createVenteDemandeFromVisitor(){
       updated_at:new Date().toISOString()
     });
     await addAppNotification('vente_request', 'visiteur', targetOwner, 'Nouvelle demande de vente', `Un visiteur a envoyé une demande de panier (${total.toFixed(2)} €)`);
-    venteCart={};
+    venteCart={}; clearVenteCartLocal();
     closeVenteCart();
     renderVente();
     showToast('✅ Demande envoyée à '+(targetOwner==='valentin'?'Valentin':'Anthony')+'. Le stock ne sera modifié qu’après validation.');
@@ -5055,7 +5130,7 @@ async function venteDemandeQty(id, idx, delta){
 function traiterVenteDemande(id){
   const d=venteDemandes.find(x=>String(x.id)===String(id));
   if(!d) return;
-  venteCart={};
+  venteCart={}; clearVenteCartLocal();
   (Array.isArray(d.items)?d.items:[]).forEach(it=>{
     const key=it.key || (it.carte_id+'|'+it.rarete);
     const qty=parseInt(it.qty)||0;
@@ -5214,7 +5289,7 @@ async function confirmVenteCheckout(){
     }
     await addHistory('vente', currentUser||'anthony', '', `Vente validée — ${removed} carte(s) retirée(s) du stock`);
     showToast(`✅ Vente validée — ${removed} carte(s) retirée(s) du stock`);
-    venteCart={};
+    venteCart={}; clearVenteCartLocal();
     venteCheckoutSel={};
     closeVenteCheckout();
     renderVente();
