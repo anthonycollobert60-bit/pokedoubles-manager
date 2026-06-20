@@ -502,6 +502,19 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--text);heig
 .friend-picker-item{display:flex;align-items:center;gap:12px;padding:12px;border-radius:16px;background:var(--surface2);border:1px solid var(--border);cursor:pointer}
 .friend-picker-item:active{transform:scale(.99)}
 
+
+/* ── REPORTS V2 + MISES À JOUR ─────────────────────── */
+.report-steps{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:12px 0}
+.report-step{font-size:10px;font-weight:900;text-align:center;padding:7px 4px;border-radius:999px;border:1px solid var(--border);background:var(--surface2);color:var(--text2)}
+.report-step.active{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;border-color:transparent}
+.report-status-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.report-status-btn{padding:8px 10px;border-radius:999px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:12px;font-weight:900;cursor:pointer}
+.report-status-btn.active{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;border-color:transparent}
+.update-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:14px;margin-bottom:10px}
+.update-title{font-size:16px;font-weight:900;margin-bottom:4px}
+.update-meta{font-size:12px;color:var(--text2);font-weight:700;margin-bottom:8px}
+.update-body{font-size:14px;white-space:pre-wrap;line-height:1.45}
+
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.1.0/tesseract.min.js"></script>
 
@@ -670,6 +683,7 @@ window.PokeCardsFCM = {
     <button class="nav-tab" data-tab="transfer" id="tabTransfer" style="display:none;" onclick="switchTab('transfer')">🔄 Transfert</button>
     <button class="nav-tab" data-tab="messages" id="tabMessages" style="display:none;" onclick="switchTab('messages')">💬 Messages <span class="msg-badge" id="messagesUnreadBadge">0</span></button>
     <button class="nav-tab" data-tab="reports" id="tabReports" style="display:none;" onclick="switchTab('reports')">🚨 Reports</button>
+    <button class="nav-tab" data-tab="updates" id="tabUpdates" style="display:none;" onclick="switchTab('updates')">🆕 Mis à jour</button>
     <button class="nav-tab" data-tab="vente" id="tabVente" style="display:none;" onclick="switchTab('vente')">🛒 Vente</button>
     <button class="nav-tab" data-tab="history" id="tabHistory" style="display:none;" onclick="switchTab('history')">📜 Historique</button>
     <button class="nav-tab" data-tab="admin" id="tabAdmin" style="display:none;" onclick="switchTab('admin')">⚙️ Gérer</button>
@@ -699,6 +713,7 @@ window.PokeCardsFCM = {
   <div class="app-body" id="transferBody" style="display:none;"></div>
   <div class="app-body" id="messagesBody" style="display:none;"></div>
   <div class="app-body" id="reportsBody" style="display:none;"></div>
+  <div class="app-body" id="updatesBody" style="display:none;"></div>
   <div class="app-body" id="historyBody" style="display:none;"></div>
   <div class="app-body" id="adminBody" style="display:none;"></div>
 </div>
@@ -863,6 +878,7 @@ let currentCollId = null;
 let currentCardId = null;
 let blocs = [], collections = [], cartes = [], quantites = [];
 let appReports = [];
+let appUpdates = [];
 
 /* ══ SUPABASE HELPERS ══════════════════════════════════ */
 async function sb(path, opts={}) {
@@ -1655,6 +1671,7 @@ function enterApp(){
   document.getElementById('tabTransfer').style.display = currentUser ? '' : 'none';
   document.getElementById('tabMessages').style.display = currentUser ? '' : 'none';
   document.getElementById('tabReports').style.display = currentUser ? '' : 'none';
+  document.getElementById('tabUpdates').style.display = currentUser ? '' : 'none';
   document.getElementById('tabVente').style.display = (!currentUser || currentUser==='anthony' || currentUser==='valentin') ? '' : 'none';
   switchTab(currentUser ? 'profile' : 'vente');
   loadData();
@@ -1719,7 +1736,7 @@ function closeAppMenu(){
   if(menu) menu.classList.remove('open');
 }
 function getTabLabel(tab){
-  const labels={profile:'👤 Profil',collection:'📖 Collection',scan:'📷 Scan',stock:'📦 Stock',transfer:'🔄 Transfert',messages:'💬 Messages',vente:'🛒 Vente',history:'📜 Historique',admin:'⚙️ Gérer',reports:'🚨 Reports'};
+  const labels={profile:'👤 Profil',collection:'📖 Collection',scan:'📷 Scan',stock:'📦 Stock',transfer:'🔄 Transfert',messages:'💬 Messages',vente:'🛒 Vente',history:'📜 Historique',admin:'⚙️ Gérer',reports:'🚨 Reports',updates:'🆕 Mis à jour'};
   return labels[tab]||'Menu';
 }
 function updateCurrentTabLabel(tab){
@@ -1748,6 +1765,7 @@ function switchTab(tab){
   document.getElementById('transferBody').style.display = tab==='transfer'  ? '' : 'none';
   document.getElementById('messagesBody').style.display = tab==='messages'  ? '' : 'none';
   document.getElementById('reportsBody').style.display = tab==='reports'   ? '' : 'none';
+  document.getElementById('updatesBody').style.display = tab==='updates'   ? '' : 'none';
   document.getElementById('historyBody').style.display = tab==='history'    ? '' : 'none';
   document.getElementById('subheader').style.display = tab==='collection' ? '' : 'none';
   if(tab==='scan'){ renderScan(); }
@@ -1757,9 +1775,11 @@ function switchTab(tab){
   if(tab==='transfer'){ renderTransfer(); }
   if(tab==='messages'){ refreshMessagesBadge(); renderMessages(); }
   if(tab==='reports'){ renderReports(); }
+  if(tab==='updates'){ renderUpdates(); }
   if(tab==='history'){ loadHistory(); renderHistory(); }
   if(tab==='admin' && adminDirty){ renderAdmin(); adminDirty=false; }
 }
+
 
 
 
@@ -1780,9 +1800,22 @@ function reportThemeLabel(v){
   })[v] || v || 'Autre';
 }
 
+function reportStatusLabel(v){
+  return ({
+    sent:'📨 Envoyé',
+    open:'🚨 Ouvert',
+    progress:'🟡 En cours',
+    closed:'✅ Clôturé'
+  })[v] || '📨 Envoyé';
+}
+
+function reportStatusIndex(v){
+  return ({sent:1, open:2, progress:3, closed:4})[v] || 1;
+}
+
 function reportIsClosed(r){
   const extra=r.extra||{};
-  return !!extra.closed_at || extra.status==='closed' || !!extra.close_message;
+  return extra.status==='closed' || !!extra.closed_at || !!extra.close_message;
 }
 
 function makeReportEventId(theme,title,body){
@@ -1792,6 +1825,19 @@ function makeReportEventId(theme,title,body){
     String(title||'').trim().toLowerCase(),
     String(body||'').trim().toLowerCase()
   ].join('|').slice(0,900);
+}
+
+function renderReportSteps(status){
+  const current=reportStatusIndex(status);
+  const steps=[
+    ['sent','1. Envoyé'],
+    ['open','2. Ouvert'],
+    ['progress','3. En cours'],
+    ['closed','4. Clôturé']
+  ];
+  return `<div class="report-steps">`+steps.map((s,idx)=>
+    `<div class="report-step ${idx+1<=current?'active':''}">${esc(s[1])}</div>`
+  ).join('')+`</div>`;
 }
 
 async function submitReport(){
@@ -1835,7 +1881,7 @@ async function submitReport(){
       report_title:title,
       report_body:body,
       from:profileKey(currentUser).toLowerCase(),
-      status:'open',
+      status:'sent',
       client_event_id:eventId
     });
 
@@ -1849,25 +1895,35 @@ async function submitReport(){
   }
 }
 
-async function closeReport(reportId){
+async function updateReportStatus(reportId, status){
   if(profileKey(currentUser)!=='anthony'){ showToast('Action réservée à Anthony'); return; }
-
-  const msg=(document.getElementById('closeReportMsg_'+reportId)?.value||'').trim();
-  if(!msg){ showToast('Ajoute une phrase de clôture'); return; }
 
   const report=appReports.find(r=>String(r.id)===String(reportId));
   if(!report){ showToast('Report introuvable'); return; }
 
-  if(reportIsClosed(report)){
-    showToast('Report déjà clôturé');
+  const extra={...(report.extra||{})};
+  const previousStatus=extra.status||'sent';
+
+  if(previousStatus===status){
+    showToast('Ce statut est déjà sélectionné');
     return;
   }
 
-  const extra={...(report.extra||{})};
-  extra.status='closed';
-  extra.closed_at=new Date().toISOString();
-  extra.close_message=msg;
-  extra.closed_by=profileKey(currentUser).toLowerCase();
+  if(status==='closed'){
+    const msg=(document.getElementById('closeReportMsg_'+reportId)?.value||'').trim();
+    if(!msg){ showToast('Ajoute une phrase de clôture'); return; }
+    extra.closed_at=new Date().toISOString();
+    extra.close_message=msg;
+    extra.closed_by=profileKey(currentUser).toLowerCase();
+  }else{
+    delete extra.closed_at;
+    delete extra.close_message;
+    delete extra.closed_by;
+  }
+
+  extra.status=status;
+  extra.status_updated_at=new Date().toISOString();
+  extra.status_updated_by=profileKey(currentUser).toLowerCase();
 
   try{
     await sbPatch('app_notifications','?id=eq.'+encodeURIComponent(reportId),{
@@ -1877,32 +1933,40 @@ async function closeReport(reportId){
 
     const target=profileKey(report.actor||extra.from||'').toLowerCase();
     const originalTitle=extra.report_title || String(report.title||'').replace(/^🚨?\s*Nouveau report\s*:\s*/,'') || 'Report';
+    const notifTitle=status==='closed'
+      ? '✅ Report clôturé : '+originalTitle
+      : '🚨 Statut du report : '+originalTitle;
+    const notifBody=status==='closed'
+      ? (extra.close_message||'Votre report a été clôturé.')
+      : 'Nouveau statut : '+reportStatusLabel(status);
 
     if(target && target!=='anthony'){
-      const closeEventId='report_closed_'+reportId;
       await addAppNotification(
-        'report_closed',
+        status==='closed'?'report_closed':'report_status',
         'anthony',
         target,
-        '🚨 Report clôturé : '+originalTitle,
-        msg,
+        notifTitle,
+        notifBody,
         {
           report_id:String(reportId),
           report_title:originalTitle,
-          close_message:msg,
-          status:'closed',
-          client_event_id:closeEventId
+          status,
+          previous_status:previousStatus,
+          close_message:extra.close_message||'',
+          client_event_id:'report_'+status+'_'+reportId+'_'+Date.now()
         }
       );
     }
 
-    showToast('✅ Report clôturé');
+    showToast(status==='closed'?'✅ Report clôturé':'✅ Statut mis à jour');
     renderReports();
   }catch(e){
     console.error(e);
-    showToast('Impossible de clôturer le report');
+    showToast('Impossible de modifier le statut');
   }
 }
+
+async function closeReport(reportId){ return updateReportStatus(reportId,'closed'); }
 
 async function loadReports(){
   if(!currentUser){ appReports=[]; return; }
@@ -1977,8 +2041,8 @@ async function renderReports(){
 
   list.innerHTML=appReports.map(r=>{
     const extra=r.extra||{};
+    const status=extra.status || 'sent';
     const theme=reportThemeLabel(extra.theme||'autre');
-    const closed=reportIsClosed(r);
     const title=extra.report_title || String(r.title||'').replace(/^🚨?\s*Nouveau report\s*:\s*/,'') || 'Sans titre';
     const txt=extra.report_body || r.body || '';
     const actor=effectiveUserLabel(r.actor||'');
@@ -1990,29 +2054,130 @@ async function renderReports(){
       <div class="report-item">
         <div class="report-item-head">
           <div>
-            <span class="report-pill">${closed?'✅ Clôturé':'🚨 Ouvert'}</span>
+            <span class="report-pill">${esc(reportStatusLabel(status))}</span>
             <span class="report-pill">${esc(theme)}</span>
             <div class="report-title">${esc(title)}</div>
             <div class="report-meta">Par ${esc(actor)} · ${esc(date)}</div>
           </div>
         </div>
+
+        ${renderReportSteps(status)}
+
         <div class="report-body">${esc(txt)}</div>
 
-        ${closed ? `
+        ${status==='closed' ? `
           <div class="report-closed">
             <div class="report-meta">Clôturé${closedDate?' le '+esc(closedDate):''}</div>
             <div class="report-close-text">${esc(closeMsg)}</div>
           </div>
         ` : ''}
 
-        ${isAdmin && !closed ? `
+        ${isAdmin ? `
+          <div class="report-status-row">
+            <button class="report-status-btn ${status==='sent'?'active':''}" onclick="updateReportStatus('${esc(String(r.id))}','sent')">📨 Envoyé</button>
+            <button class="report-status-btn ${status==='open'?'active':''}" onclick="updateReportStatus('${esc(String(r.id))}','open')">🚨 Ouvert</button>
+            <button class="report-status-btn ${status==='progress'?'active':''}" onclick="updateReportStatus('${esc(String(r.id))}','progress')">🟡 En cours</button>
+          </div>
           <div class="report-close-box">
             <label class="report-label">Phrase de clôture
-              <textarea class="form-input" id="closeReportMsg_${esc(String(r.id))}" placeholder="Ex : Bug résolu, merci pour le signalement."></textarea>
+              <textarea class="form-input" id="closeReportMsg_${esc(String(r.id))}" placeholder="Ex : Bug résolu ou amélioration effectuée.">${status==='closed'?esc(closeMsg):''}</textarea>
             </label>
-            <button class="btn-primary" onclick="closeReport('${esc(String(r.id))}')">✅ Clôturer le report</button>
+            <button class="btn-primary" onclick="updateReportStatus('${esc(String(r.id))}','closed')">✅ Clôturer</button>
           </div>
         ` : ''}
+      </div>
+    `;
+  }).join('');
+}
+
+
+/* ══ MISES À JOUR ═════════════════════════════════════ */
+async function submitUpdate(){
+  if(profileKey(currentUser)!=='anthony'){ showToast('Action réservée à Anthony'); return; }
+  const title=(document.getElementById('updateTitle')?.value||'').trim();
+  const body=(document.getElementById('updateBodyText')?.value||'').trim();
+
+  if(!title){ showToast('Ajoute un titre de mise à jour'); return; }
+  if(!body){ showToast('Ajoute une description'); return; }
+
+  try{
+    await sbPost('app_notifications', {
+      type:'update',
+      actor:'anthony',
+      target:'all',
+      title,
+      body,
+      extra:{update_title:title, update_body:body},
+      read_at:null,
+      created_at:new Date().toISOString()
+    });
+    document.getElementById('updateTitle').value='';
+    document.getElementById('updateBodyText').value='';
+    showToast('✅ Mise à jour publiée');
+    renderUpdates();
+  }catch(e){
+    console.error(e);
+    showToast('Impossible de publier la mise à jour');
+  }
+}
+
+async function loadUpdates(){
+  try{
+    const rows=await sbGet('app_notifications','?select=*&type=eq.update&target=eq.all&order=created_at.desc&limit=100');
+    appUpdates=Array.isArray(rows)?rows:[];
+  }catch(e){
+    console.warn('Mises à jour non chargées', e);
+    appUpdates=[];
+  }
+}
+
+async function renderUpdates(){
+  const body=document.getElementById('updatesBody');
+  if(!body) return;
+  if(!currentUser){
+    body.innerHTML='<div class="empty-state"><h3>Connexion requise</h3><p>Connecte-toi pour voir les mises à jour.</p></div>';
+    return;
+  }
+
+  const isAdmin=profileKey(currentUser)==='anthony';
+  body.innerHTML=`
+    <div class="section-title">🆕 Mis à jour</div>
+
+    ${isAdmin ? `
+      <div class="report-card">
+        <div class="report-form">
+          <label class="report-label">Titre de la mise à jour
+            <input class="form-input" id="updateTitle" placeholder="Ex : Nouveau chat Messenger">
+          </label>
+
+          <label class="report-label">Description
+            <textarea class="form-input report-textarea" id="updateBodyText" placeholder="Explique les nouveautés…"></textarea>
+          </label>
+
+          <button class="btn-primary" onclick="submitUpdate()">📢 Publier la mise à jour</button>
+        </div>
+      </div>
+    ` : ''}
+
+    <div id="updatesList"><div class="loading"><div class="spinner"></div><span>Chargement des mises à jour…</span></div></div>
+  `;
+
+  await loadUpdates();
+
+  const list=document.getElementById('updatesList');
+  if(!list) return;
+  if(!appUpdates.length){
+    list.innerHTML='<div class="empty-state"><h3>Aucune mise à jour</h3><p>Les nouveautés apparaîtront ici.</p></div>';
+    return;
+  }
+
+  list.innerHTML=appUpdates.map(u=>{
+    const date=u.created_at ? new Date(u.created_at).toLocaleString('fr-FR') : '';
+    return `
+      <div class="update-card">
+        <div class="update-title">${esc(u.extra?.update_title || u.title || 'Mise à jour')}</div>
+        <div class="update-meta">Publié par Anthony · ${esc(date)}</div>
+        <div class="update-body">${esc(u.extra?.update_body || u.body || '')}</div>
       </div>
     `;
   }).join('');
