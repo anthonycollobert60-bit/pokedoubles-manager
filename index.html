@@ -3481,7 +3481,36 @@ async function sendPushNotificationTo(target, title, body, type='', extra={}){
   }
 }
 
+
+/* ══ ANTI-DOUBLON NOTIFICATIONS ═══════════════════════ */
+const appNotificationDedupe = new Map();
+const pushNotificationDedupe = new Map();
+
+function notificationDedupeKey(type, actor, target, title, body, extra={}){
+  const eventId = extra?.client_event_id || extra?.message_id || extra?.report_id || extra?.transfer_id || '';
+  return [
+    String(type||''),
+    profileKey(actor||'').toLowerCase(),
+    profileKey(target||'').toLowerCase(),
+    String(title||''),
+    String(body||''),
+    String(eventId||'')
+  ].join('|');
+}
+
+function shouldSkipRecentNotification(key, store, delay=12000){
+  const now = Date.now();
+  const last = store.get(key) || 0;
+  store.set(key, now);
+  return now - last < delay;
+}
+
 async function addAppNotification(type, actor, target, title, body, extra={}){
+  const dedupeKey = notificationDedupeKey(type, actor, target, title, body, extra);
+  if(shouldSkipRecentNotification(dedupeKey, appNotificationDedupe, 12000)){
+    console.warn('Notification app ignorée : doublon récent', {type, actor, target, title});
+    return null;
+  }
   const pushTargetKey=profileKey(target).toLowerCase();
   const row={
     type,
@@ -4074,6 +4103,7 @@ function selectChatSharedCard(carteId){
 }
 
 async function sendChatMessage(){
+  const chatEventId = 'chat_msg_event_'+Date.now()+'_'+Math.random().toString(36).slice(2);
   if(!currentUser || !currentChatFriend){ showToast('Choisis un ami'); return; }
   const body=(document.getElementById('chatText')?.value||'').trim();
   if(!body && !pendingChatBlob && !pendingSharedCardId){ showToast('Message vide'); return; }
