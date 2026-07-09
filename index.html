@@ -5536,7 +5536,7 @@ function renderScan(){
     <div class="scan-cam-wrap" id="scanCamWrap">
       <video id="scanVideo" playsinline autoplay muted style="display:none;"></video>
       <div class="scan-frame" id="scanFrame" style="display:none;"></div>
-      <div class="scan-hint" id="scanHint" style="display:none;">Cadre la <b>carte entière</b> avec le numéro (ex : 008/086) bien visible en bas</div>
+      <div class="scan-hint" id="scanHint" style="display:none;">Cadre la <b>carte entière</b> : nom en haut, numéro en bas et énergie/type visibles</div>
       <div id="scanPlaceholder" style="color:#fff;text-align:center;padding:24px;font-size:14px;font-weight:600;opacity:0.85;">
         <div style="font-size:40px;margin-bottom:8px;">📷</div>
         Choisis d’abord la collection à scanner, puis démarre la caméra.
@@ -5752,8 +5752,10 @@ async function captureScan(){
 
   // 3) Analyser l'image figée (la caméra peut être bougée pendant ce temps)
   try{
-    const text=await runScanOCR(canvas, !!scanCollFilter); // mode rapide si une collection est choisie
-    handleScanText(text);
+    const numText=await runScanOCR(canvas, !!scanCollFilter); // lecture rapide du numéro
+    let contextText='';
+    try{ contextText=await runScanContextOCR(canvas); }catch(eCtx){ contextText=''; }
+    handleScanText(((numText||'')+' '+(contextText||'')).trim());
   }catch(e){
     setScanStatus('❌ Lecture impossible, réessaie');
     document.getElementById('scanShutter').disabled=false;
@@ -5895,6 +5897,97 @@ async function runScanOCR(srcCanvas, fast){
   return bestNum || numText;
 }
 
+
+// OCR complémentaire : lit le nom, quelques mots et les indices de type/énergie.
+// Le numéro reste prioritaire, mais ce texte aide à départager quand le numéro est mal lu.
+async function runScanContextOCR(srcCanvas){
+  const W=srcCanvas.width, H=srcCanvas.height;
+  async function pass(region){
+    const c=document.createElement('canvas');
+    const ctx=c.getContext('2d');
+    const sx=Math.round(region.x*W), sy=Math.round(region.y*H);
+    const sw=Math.round(region.w*W), sh=Math.round(region.h*H);
+    let scale=420/Math.max(1,sh);
+    if(scale>3) scale=3; if(scale<1) scale=1;
+    c.width=Math.round(sw*scale); c.height=Math.round(sh*scale);
+    ctx.imageSmoothingEnabled=true; ctx.imageSmoothingQuality='high';
+    ctx.drawImage(srcCanvas, sx,sy,sw,sh, 0,0,c.width,c.height);
+    try{
+      const img=ctx.getImageData(0,0,c.width,c.height);
+      const d=img.data;
+      // Gris + contraste doux pour mieux lire le nom en haut.
+      const k=1.35, b=128*(1-k);
+      for(let i=0;i<d.length;i+=4){
+        let g=0.299*d[i]+0.587*d[i+1]+0.114*d[i+2];
+        g=g*k+b; g=g<0?0:g>255?255:g;
+        d[i]=d[i+1]=d[i+2]=g;
+      }
+      ctx.putImageData(img,0,0);
+    }catch(e){}
+    try{
+      const {data}=await Tesseract.recognize(c,'eng',{ logger:()=>{} });
+      return data.text||'';
+    }catch(e){ return ''; }
+  }
+  const zones=[
+    {x:0.04,y:0.03,w:0.72,h:0.18}, // haut gauche : nom + PV/type éventuel
+    {x:0.00,y:0.00,w:1.00,h:0.32}, // haut complet
+    {x:0.00,y:0.70,w:1.00,h:0.30}  // bas : numéro + mentions
+  ];
+  const parts=[];
+  for(const z of zones){
+    const t=await pass(z);
+    if(t) parts.push(t);
+  }
+  return parts.join(' ');
+}
+
+// Détecte des indices de type/énergie dans le texte OCR.
+function extractScanEnergies(rawText){
+  const t=(rawText||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  const found=new Set();
+  const groups={
+    electric:['electric','electrique','lightning','eclair','electro'],
+    fire:['fire','feu','flamme'],
+    water:['water','eau','aquatique'],
+    grass:['grass','plante','leaf','herbe'],
+    fighting:['fighting','combat','fight','sol','roche'],
+    psychic:['psychic','psy','psycho'],
+    darkness:['darkness','obscurite','dark','tenebres'],
+    metal:['metal','acier'],
+    fairy:['fairy','fee'],
+    dragon:['dragon'],
+    colorless:['colorless','incolore','normal']
+  };
+  Object.entries(groups).forEach(([key,words])=>{
+    if(words.some(w=>t.includes(w))) found.add(key);
+  });
+  return [...found];
+}
+
+function scanEnergyScore(card, energies){
+  if(!energies || !energies.length || !card) return 0;
+  const raw=JSON.stringify(card).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  const aliases={
+    electric:['electric','electrique','lightning'],
+    fire:['fire','feu'],
+    water:['water','eau'],
+    grass:['grass','plante'],
+    fighting:['fighting','combat'],
+    psychic:['psychic','psy'],
+    darkness:['darkness','obscurite','dark'],
+    metal:['metal','acier'],
+    fairy:['fairy','fee'],
+    dragon:['dragon'],
+    colorless:['colorless','incolore','normal']
+  };
+  let score=0;
+  energies.forEach(e=>{
+    if((aliases[e]||[e]).some(a=>raw.includes(a))) score=Math.max(score,22);
+  });
+  return score;
+}
+
 // Chiffres facilement confondus par l'OCR (pour tolérer les erreurs de lecture)
 const OCR_DIGIT_CONFUSIONS={'0':['8','6','9'],'1':['7'],'7':['1'],'8':['0','6','3'],'6':['8','5','0'],'5':['6','3'],'3':['8','5'],'9':['0'],'2':['7']};
 // Deux numéros sont-ils "proches" (1 chiffre de différence dû à l'OCR) ?
@@ -5965,6 +6058,7 @@ function handleScanText(rawText){
   // Normalise un texte pour comparaison (sans accents, minuscules)
   const norm=s=>(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
   const nWords=words.map(norm);
+  const scanEnergies=extractScanEnergies(rawText);
 
   // Distance de Levenshtein (pour tolérer les fautes de lecture OCR sur le nom)
   function lev(a,b){
@@ -6020,6 +6114,10 @@ function handleScanText(rawText){
       if(cTot===tot){ score+=40; totHit=true; }
     }
 
+    // 4) ÉNERGIE / TYPE — bonus de confirmation quand l'OCR lit un indice utile
+    const eScore=scanEnergyScore(c, scanEnergies);
+    if(eScore) score+=eScore;
+
     // BONUS : nom + numéro qui concordent = quasi certain
     if(nameHit && numHit) score+=90;
     if(nameHit && numHit && totHit) score+=60;
@@ -6066,6 +6164,9 @@ function handleScanText(rawText){
     }
   }
 
+  if(scanEnergies.length){
+    detected=(detected?detected+' · ':'')+'Énergie/type : '+scanEnergies.join(', ');
+  }
   if(!detected && words.length) detected='Texte : '+words.slice(0,3).join(' ');
   showScanResult(candidates, detected);
 }
