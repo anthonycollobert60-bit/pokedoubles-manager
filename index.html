@@ -6426,6 +6426,234 @@ function togglePasswordVisibility(){
     btn.setAttribute('aria-label', show?'Masquer le mot de passe':'Afficher le mot de passe');
   }
 }
+
+
+/* ══ SCAN STRICT V2 : NOM + NUMÉRO PRIORITAIRES ═══════ */
+function normalizeScanTextV2(v){
+  return String(v||'')
+    .toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+    .replace(/[’']/g,' ')
+    .replace(/[^a-z0-9\/\s-]/g,' ')
+    .replace(/\s+/g,' ')
+    .trim();
+}
+
+function levenshteinScanV2(a,b){
+  a=normalizeScanTextV2(a); b=normalizeScanTextV2(b);
+  if(!a) return b.length;
+  if(!b) return a.length;
+  const dp=Array.from({length:a.length+1},()=>Array(b.length+1).fill(0));
+  for(let i=0;i<=a.length;i++) dp[i][0]=i;
+  for(let j=0;j<=b.length;j++) dp[0][j]=j;
+  for(let i=1;i<=a.length;i++){
+    for(let j=1;j<=b.length;j++){
+      const cost=a[i-1]===b[j-1]?0:1;
+      dp[i][j]=Math.min(dp[i-1][j]+1, dp[i][j-1]+1, dp[i-1][j-1]+cost);
+    }
+  }
+  return dp[a.length][b.length];
+}
+
+function similarityScanV2(a,b){
+  a=normalizeScanTextV2(a); b=normalizeScanTextV2(b);
+  if(!a || !b) return 0;
+  if(a===b) return 1;
+  if(a.includes(b) || b.includes(a)) return Math.min(1, Math.max(a.length,b.length)/Math.min(a.length,b.length) > 1.9 ? .72 : .9);
+  const d=levenshteinScanV2(a,b);
+  return Math.max(0, 1 - d / Math.max(a.length,b.length));
+}
+
+function extractCardNumberScanV2(text){
+  const raw=String(text||'');
+  const patterns=[
+    /(?:n[°oº]?\s*)?(\d{1,3})\s*[\/]\s*(\d{2,3})/i,
+    /\b(\d{1,3})\s*[-]\s*(\d{2,3})\b/i,
+    /\b(\d{3})\s*[oO0]\s*(\d{3})\b/i
+  ];
+  for(const p of patterns){
+    const m=raw.match(p);
+    if(m){
+      const left=String(parseInt(m[1],10));
+      const right=String(parseInt(m[2],10)).padStart(3,'0').replace(/^0(?=\d{2}$)/,'');
+      return {localId:left, printed:left+'/'+String(parseInt(m[2],10))};
+    }
+  }
+  return null;
+}
+
+function extractPokemonNameScanV2(text){
+  const lines=String(text||'').split(/\n+/).map(l=>normalizeScanTextV2(l)).filter(Boolean);
+  const ignore=[
+    'base','stage','pv','hp','pokemon','faiblesse','resistance','retraite','illustr','illus',
+    'nintendo','creatures','game freak','taille','poids','attaque','degats','ce pokemon'
+  ];
+  const candidates=[];
+  for(const line of lines.slice(0,10)){
+    if(ignore.some(w=>line.includes(w))) continue;
+    if(/\d{2,3}\s*pv/.test(line)) continue;
+    const cleaned=line.replace(/\b\d+\b/g,'').trim();
+    const words=cleaned.split(/\s+/).filter(Boolean);
+    for(const w of words){
+      if(w.length>=4 && /^[a-z-]+$/.test(w)) candidates.push(w);
+    }
+    if(cleaned.length>=4 && cleaned.length<=24) candidates.push(cleaned);
+  }
+  // Favorise la première ligne de nom lisible, souvent le nom de la carte.
+  return candidates[0] || '';
+}
+
+function extractEnergyScanV2(text){
+  const t=normalizeScanTextV2(text);
+  const map=[
+    ['electrique',['electrique','electric','eclair']],
+    ['feu',['feu','fire']],
+    ['eau',['eau','water']],
+    ['plante',['plante','grass']],
+    ['psy',['psy','psychic']],
+    ['combat',['combat','fighting']],
+    ['obscurite',['obscurite','dark']],
+    ['metal',['metal','acier']],
+    ['fee',['fee','fairy']],
+    ['incolore',['incolore','normal']]
+  ];
+  for(const [type,keys] of map){
+    if(keys.some(k=>t.includes(k))) return type;
+  }
+  return '';
+}
+
+function localIdOfCardScanV2(card){
+  return String(card?.localId || card?.local_id || card?.number || card?.num || '').replace(/^0+/,'') || '';
+}
+
+function cardNameScanV2(card){
+  return String(card?.name || card?.nom || card?.label || '');
+}
+
+function cardTypeTextScanV2(card){
+  return normalizeScanTextV2([
+    card?.type,
+    card?.types,
+    card?.energy,
+    card?.energies,
+    card?.category,
+    card?.rarity,
+    JSON.stringify(card?.types||'')
+  ].join(' '));
+}
+
+function scoreCardFromScanV2(card, scan){
+  const cardNum=localIdOfCardScanV2(card);
+  const scanNum=String(scan.localId||'').replace(/^0+/,'');
+  const cName=cardNameScanV2(card);
+  const nameSim=similarityScanV2(scan.name, cName);
+  let score=0;
+  let reasons=[];
+
+  if(scanNum && cardNum && scanNum===cardNum){
+    score+=70;
+    reasons.push('numéro exact');
+  }else if(scanNum && cardNum){
+    // Si un numéro est lu mais ne correspond pas, grosse pénalité.
+    score-=35;
+    reasons.push('numéro différent');
+  }
+
+  if(scan.name){
+    if(nameSim>=0.92){ score+=45; reasons.push('nom exact/proche'); }
+    else if(nameSim>=0.78){ score+=28; reasons.push('nom probable'); }
+    else if(nameSim>=0.62){ score+=10; reasons.push('nom faible'); }
+    else {
+      // Si le nom OCR est fiable et très différent, on refuse presque la carte.
+      score-=55;
+      reasons.push('nom incompatible');
+    }
+  }
+
+  if(scan.energy){
+    const ct=cardTypeTextScanV2(card);
+    if(ct.includes(scan.energy)){ score+=10; reasons.push('type/énergie'); }
+  }
+
+  return {card, score, nameSim, reasons};
+}
+
+function bestCardsFromStrictScanV2(cards, scan){
+  const scored=(cards||[])
+    .map(c=>scoreCardFromScanV2(c,scan))
+    .sort((a,b)=>b.score-a.score);
+
+  const best=scored[0]||null;
+  const second=scored[1]||null;
+
+  if(!best) return {best:null, candidates:[], uncertain:true, reason:'aucune carte'};
+
+  const hasNumber=!!scan.localId;
+  const hasName=!!scan.name;
+
+  // Règles strictes :
+  // - si numéro + nom sont lus, score minimum 85.
+  // - si numéro seul, score minimum 65.
+  // - si nom seul, score minimum 70 et similarité forte.
+  let minScore=75;
+  if(hasNumber && hasName) minScore=85;
+  else if(hasNumber) minScore=65;
+  else if(hasName) minScore=70;
+
+  const margin=second ? best.score-second.score : 999;
+  const uncertain = best.score < minScore || (hasName && best.nameSim < 0.62) || margin < 12;
+
+  return {
+    best: uncertain ? null : best.card,
+    candidates: scored.filter(x=>x.score>=Math.max(25,best.score-25)).slice(0,5),
+    uncertain,
+    reason: uncertain ? `score insuffisant ou résultat trop proche (${best.score})` : 'ok',
+    debug: scored.slice(0,5)
+  };
+}
+
+/*
+  Surcharge de la fonction de sélection si le fichier possède une fonction globale.
+  Cette fonction est conçue pour être appelée par le scan existant si disponible.
+*/
+window.findBestScannedCardStrictV2 = function(ocrText, candidateCards){
+  const num=extractCardNumberScanV2(ocrText);
+  const scan={
+    localId:num?.localId || '',
+    printed:num?.printed || '',
+    name:extractPokemonNameScanV2(ocrText),
+    energy:extractEnergyScanV2(ocrText),
+    raw:ocrText
+  };
+  return bestCardsFromStrictScanV2(candidateCards||[], scan);
+};
+
+window.showStrictScanDebugV2 = function(ocrText, candidateCards){
+  const res=window.findBestScannedCardStrictV2(ocrText,candidateCards);
+  console.log('SCAN STRICT V2', res);
+  return res;
+};
+
+
+
+function strictScanPostCheckV2(ocrText, chosenCard, candidateCards){
+  try{
+    const strict=window.findBestScannedCardStrictV2(ocrText, candidateCards);
+    if(strict.best && chosenCard){
+      const chosenId=String(chosenCard.id||chosenCard.cardId||chosenCard.localId||'');
+      const strictId=String(strict.best.id||strict.best.cardId||strict.best.localId||'');
+      if(strictId && chosenId && strictId!==chosenId) return strict.best;
+    }
+    if(strict.best) return strict.best;
+    if(strict.uncertain){
+      showToast && showToast('Scan incertain : vérifie la carte proposée');
+      console.warn('Scan incertain', strict);
+    }
+  }catch(e){ console.warn('strictScanPostCheckV2 error', e); }
+  return chosenCard;
+}
+
 </script>
 
 </body>
