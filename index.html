@@ -2924,6 +2924,12 @@ async function renderStock(){
     );
     if(Array.isArray(freshQuantites)){
       quantites=freshQuantites;
+
+      // Indispensable : le stock utilise getQuantite(), qui lit quantitesIndex.
+      // Sans cette reconstruction, l'écran continuait d'afficher l'ancien total
+      // conservé en mémoire, même après avoir rechargé Supabase.
+      buildQuantitesIndex();
+
       try{
         localStorage.setItem('pokecards_quantites_cache',JSON.stringify({
           t:Date.now(),
@@ -2954,7 +2960,7 @@ async function renderStock(){
   });
 
   // Résumé
-  const title=document.createElement('div'); title.className='section-title'; title.innerHTML='📊 Résumé des stocks <small style="font-size:11px;color:var(--text2);font-weight:700">Synchronisé avec Supabase</small>';
+  const title=document.createElement('div'); title.className='section-title'; title.innerHTML='📊 Résumé des stocks <small style="font-size:11px;color:var(--text2);font-weight:700">Synchronisé avec Supabase · index reconstruit</small>';
   body.appendChild(title);
   const grid=document.createElement('div'); grid.className='stock-grid';
   stockOwners.forEach(owner=>{
