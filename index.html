@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
-<title>PokeCards Collection</title>
+<title>PokeDoubles Manager</title>
 <link rel="manifest" href="/manifest.json?v=20260618-final-icon">
 <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png?v=20260618-final-icon">
 <link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png?v=20260618-final-icon">
@@ -12,7 +12,7 @@
 <meta name="theme-color" content="#6366f1">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="PokeCards Collection">
+<meta name="apple-mobile-web-app-title" content="PokeDoubles Manager">
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js">
 // Cache navigateur simple pour accélérer les retours dans l'application.
 if('serviceWorker' in navigator){
@@ -566,7 +566,7 @@ window.PokeCardsFCM = {
     onMessage(messaging, (payload)=>{
       try{
         const n = payload.notification || {};
-        if(window.maybeShowBrowserNotification) window.maybeShowBrowserNotification(n.title || 'PokeCards Collection', n.body || '');
+        if(window.maybeShowBrowserNotification) window.maybeShowBrowserNotification(n.title || 'PokeDoubles Manager', n.body || '');
         if(window.loadNotifications) window.loadNotifications();
       }catch(e){}
     });
@@ -601,7 +601,7 @@ window.PokeCardsFCM = {
       <circle cx="36" cy="36" r="10" fill="none" stroke="#6366f1" stroke-width="2.5"/>
       <circle cx="36" cy="36" r="5" fill="#6366f1" opacity="0.8"/>
     </svg>
-    <h1>PokeCards Collection</h1>
+    <h1>PokeDoubles Manager</h1>
     <p>Gestion de collection</p>
   </div>
   <div class="login-card">
@@ -642,9 +642,9 @@ window.PokeCardsFCM = {
         <circle cx="36" cy="36" r="8" fill="none" stroke="#6366f1" stroke-width="2.5"/>
         <circle cx="36" cy="36" r="4" fill="#6366f1"/>
       </svg>
-      <span>PokeCards</span>
+      <span>PokeDoubles</span>
     </div>
-    <div id="visitorHeaderTitle" class="visitor-header-title" style="display:none;">PokeCards Collection</div>
+    <div id="visitorHeaderTitle" class="visitor-header-title" style="display:none;">PokeDoubles Manager</div>
       <div class="topbar-search">
       <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
       <input id="searchAll" type="text" placeholder="Rechercher…"/>
@@ -3458,7 +3458,7 @@ async function requestPushPermission(){
     localStorage.setItem('pokecards_push_enabled', '1');
     showToast('✅ Vraies notifications push activées');
     refreshPushButtonState();
-    maybeShowBrowserNotification('PokeCards Collection','Notifications push activées');
+    maybeShowBrowserNotification('PokeDoubles Manager','Notifications push activées');
   }catch(e){
     showToast('Notifications indisponibles : '+(e.message||e));
   }
@@ -3495,7 +3495,7 @@ async function saveFcmToken(token){
 function maybeShowBrowserNotification(title, body){
   try{
     if('Notification' in window && Notification.permission==='granted' && document.hidden){
-      new Notification(title||'PokeCards Collection',{body:body||'',icon:document.querySelector('link[rel="icon"]')?.href||undefined});
+      new Notification(title||'PokeDoubles Manager',{body:body||'',icon:document.querySelector('link[rel="icon"]')?.href||undefined});
     }
   }catch(e){}
 }
@@ -3525,7 +3525,7 @@ async function sendPushNotificationTo(target, title, body, type='', extra={}){
       },
       body:JSON.stringify({
         target:pushTargetKey,
-        title:title||'PokeCards Collection',
+        title:title||'PokeDoubles Manager',
         body:body||'',
         type:type||'',
         extra:extra||{}
@@ -3590,7 +3590,7 @@ async function addAppNotification(type, actor, target, title, body, extra={}){
 
   // Important : l’envoi push ne dépend PAS du téléphone de l’expéditeur.
   // Seul le destinataire doit avoir activé les notifications et avoir un token dans fcm_tokens.
-  await sendPushNotificationTo(pushTargetKey, title||'PokeCards Collection', body||'', type, extra);
+  await sendPushNotificationTo(pushTargetKey, title||'PokeDoubles Manager', body||'', type, extra);
 
   // Pas de notification locale ici : Firebase gère déjà le push, cela évite les doublons.
 }
