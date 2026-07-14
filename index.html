@@ -2949,18 +2949,31 @@ async function renderStock(){
   const stockOwners = isKnownOwner(currentUser) ? OWNERS : [currentUser];
   const stats={};
   stockOwners.forEach(o=>{ stats[o]={total:0,byType:{c:0,r:0,p:0,m:0},doubles:[]}; });
-  cartes.forEach(card=>{
+
+  // Le catalogue peut contenir plusieurs objets avec le même id (cache +
+  // rechargement ou import en double). Le stock doit compter chaque carte
+  // Supabase une seule fois.
+  const uniqueCards=[...new Map(
+    (Array.isArray(cartes)?cartes:[])
+      .filter(card=>card && card.id!=null)
+      .map(card=>[String(card.id),card])
+  ).values()];
+
+  uniqueCards.forEach(card=>{
     stockOwners.forEach(owner=>{
       TYPES.forEach(type=>{
         const val=getQuantite(card.id,owner,type);
-        if(val>0){ stats[owner].total+=val; stats[owner].byType[type]+=val; }
+        if(val>0){
+          stats[owner].total+=val;
+          stats[owner].byType[type]+=val;
+        }
         if(val>1) stats[owner].doubles.push({...card,_type:type,_qty:val});
       });
     });
   });
 
   // Résumé
-  const title=document.createElement('div'); title.className='section-title'; title.innerHTML='📊 Résumé des stocks <small style="font-size:11px;color:var(--text2);font-weight:700">Synchronisé avec Supabase · index reconstruit</small>';
+  const title=document.createElement('div'); title.className='section-title'; title.innerHTML='📊 Résumé des stocks <small style="font-size:11px;color:var(--text2);font-weight:700">Synchronisé avec Supabase · cartes dédupliquées</small>';
   body.appendChild(title);
   const grid=document.createElement('div'); grid.className='stock-grid';
   stockOwners.forEach(owner=>{
@@ -3001,7 +3014,7 @@ async function renderStock(){
   // n'appelle l'API que pour les cartes sans prix ou périmées (>7j), puis
   // on réécrit les nouveaux prix dans Supabase.
   (async()=>{
-    const allCards=cartes.filter(c=>stockOwners.some(o=>TYPES.some(t=>getQuantite(c.id,o,t)>0)));
+    const allCards=uniqueCards.filter(c=>stockOwners.some(o=>TYPES.some(t=>getQuantite(c.id,o,t)>0)));
     const perOwner={}; stockOwners.forEach(o=>perOwner[o]=0);
     let grand=0, priced=0, fromApi=0;
     const fmt=v=>v.toFixed(2)+' €';
