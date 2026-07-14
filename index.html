@@ -6719,5 +6719,37 @@ function strictScanPostCheckV2(ocrText, chosenCard, candidateCards){
 
 </script>
 
+
+<style>
+/* POKECARDS MANAGER V5 — le scan appartient désormais à Ma Collection */
+#tabScan{display:none!important}
+</style>
+<script>
+(function(){
+  const oldSwitchManagerV5=window.switchTab;
+  window.switchTab=function(tab){
+    if(tab==='scan') tab='collection';
+    return oldSwitchManagerV5(tab);
+  };
+  switchTab=window.switchTab;
+
+  const oldEnsureManagerV5=window.ensureMainTabs;
+  if(typeof oldEnsureManagerV5==='function'){
+    window.ensureMainTabs=function(){
+      const result=oldEnsureManagerV5();
+      const scan=document.getElementById('tabScan');
+      if(scan) scan.style.setProperty('display','none','important');
+      return result;
+    };
+    ensureMainTabs=window.ensureMainTabs;
+  }
+
+  document.addEventListener('DOMContentLoaded',()=>{
+    const scan=document.getElementById('tabScan');
+    if(scan) scan.remove();
+  });
+})();
+</script>
+
 </body>
 </html>
