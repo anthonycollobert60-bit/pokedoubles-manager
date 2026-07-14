@@ -15,12 +15,20 @@
 <meta name="apple-mobile-web-app-title" content="PokeDoubles Manager">
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <script>
-// Débloque les appareils sur lesquels un ancien service worker (stratégie
-// "cache d'abord") serait resté enregistré, servant indéfiniment une
-// ancienne version de l'app.
+// Nettoyage : supprime tout ancien service worker générique de mise en
+// cache qui aurait pu être enregistré par une version précédente de cette
+// page. On ne garde ET on ne réenregistre AUCUN service worker générique
+// ici, pour ne laisser aucune chance d'interférence avec le service
+// worker Firebase Cloud Messaging (firebase-messaging-sw.js), qui est le
+// seul nécessaire pour cette application.
 if('serviceWorker' in navigator){
   navigator.serviceWorker.getRegistrations().then(regs=>{
-    regs.forEach(r=>r.unregister().catch(()=>{}));
+    regs.forEach(r=>{
+      const url = r.active?.scriptURL || r.installing?.scriptURL || r.waiting?.scriptURL || '';
+      if(!url.includes('firebase-messaging-sw.js')){
+        r.unregister().catch(()=>{});
+      }
+    });
   }).catch(()=>{});
   if('caches' in window){
     caches.keys().then(names=>{
@@ -28,34 +36,6 @@ if('serviceWorker' in navigator){
     }).catch(()=>{});
   }
 }
-// Cache réseau-d'abord : on essaie toujours de charger la dernière version
-// depuis le serveur ; le cache ne sert que de secours hors-ligne.
-if('serviceWorker' in navigator){
-  try{
-    const swCode=`const CACHE_NAME='pokecards-runtime-v2';
-self.addEventListener('install',e=>self.skipWaiting());
-self.addEventListener('activate',e=>{
-  e.waitUntil(caches.keys().then(names=>Promise.all(
-    names.filter(n=>n!==CACHE_NAME).map(n=>caches.delete(n))
-  )));
-  self.clients.claim();
-});
-self.addEventListener('fetch',event=>{
-  const req=event.request;
-  if(req.method!=='GET') return;
-  event.respondWith(
-    fetch(req).then(res=>{
-      caches.open(CACHE_NAME).then(cache=>{try{cache.put(req,res.clone())}catch(e){}});
-      return res;
-    }).catch(()=>caches.open(CACHE_NAME).then(cache=>cache.match(req)))
-  );
-});`;
-    const blob=new Blob([swCode],{type:'text/javascript'});
-    navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(()=>{});
-  }catch(e){}
-}
-</script>
-
 </script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;900&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
