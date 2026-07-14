@@ -2950,30 +2950,45 @@ async function renderStock(){
   const stats={};
   stockOwners.forEach(o=>{ stats[o]={total:0,byType:{c:0,r:0,p:0,m:0},doubles:[]}; });
 
-  // Le catalogue peut contenir plusieurs objets avec le même id (cache +
-  // rechargement ou import en double). Le stock doit compter chaque carte
-  // Supabase une seule fois.
+  // Catalogue dédupliqué uniquement pour les images, noms et prix.
   const uniqueCards=[...new Map(
     (Array.isArray(cartes)?cartes:[])
       .filter(card=>card && card.id!=null)
       .map(card=>[String(card.id),card])
   ).values()];
+  const cardById=new Map(uniqueCards.map(card=>[String(card.id),card]));
 
-  uniqueCards.forEach(card=>{
-    stockOwners.forEach(owner=>{
-      TYPES.forEach(type=>{
-        const val=getQuantite(card.id,owner,type);
-        if(val>0){
-          stats[owner].total+=val;
-          stats[owner].byType[type]+=val;
-        }
-        if(val>1) stats[owner].doubles.push({...card,_type:type,_qty:val});
-      });
-    });
+  // Source de vérité du résumé : les lignes Supabase fraîchement chargées.
+  // On additionne toutes les lignes, y compris lorsqu'une même combinaison
+  // carte/joueur/rareté existe plusieurs fois. C'est exactement la logique
+  // de SUM(quantite) utilisée dans le diagnostic SQL.
+  const groupedQty=new Map();
+  (Array.isArray(quantites)?quantites:[]).forEach(q=>{
+    const owner=String(q.joueur||'').trim();
+    const type=String(q.rarete||'').trim();
+    const value=Math.max(0,parseInt(q.quantite)||0);
+    if(!stockOwners.includes(owner) || !TYPES.includes(type) || value<=0) return;
+
+    stats[owner].total+=value;
+    stats[owner].byType[type]+=value;
+
+    const key=String(q.carte_id)+'|'+owner+'|'+type;
+    groupedQty.set(key,(groupedQty.get(key)||0)+value);
+  });
+
+  // Nombre de cartes/variantes en double : une seule entrée par combinaison
+  // carte + propriétaire + rareté, avec les lignes multiples additionnées.
+  groupedQty.forEach((qty,key)=>{
+    if(qty<=1) return;
+    const [cardId,owner,type]=key.split('|');
+    const card=cardById.get(String(cardId));
+    if(card && stats[owner]){
+      stats[owner].doubles.push({...card,_type:type,_qty:qty});
+    }
   });
 
   // Résumé
-  const title=document.createElement('div'); title.className='section-title'; title.innerHTML='📊 Résumé des stocks <small style="font-size:11px;color:var(--text2);font-weight:700">Synchronisé avec Supabase · cartes dédupliquées</small>';
+  const title=document.createElement('div'); title.className='section-title'; title.innerHTML='📊 Résumé des stocks <small style="font-size:11px;color:var(--text2);font-weight:700">Synchronisé avec Supabase · total SQL exact</small>';
   body.appendChild(title);
   const grid=document.createElement('div'); grid.className='stock-grid';
   stockOwners.forEach(owner=>{
@@ -3019,7 +3034,8 @@ async function renderStock(){
     let grand=0, priced=0, fromApi=0;
     const fmt=v=>v.toFixed(2)+' €';
     const stillThere=()=>document.getElementById('grandTotalValue');
-    const qtyByOwner=(card,o)=>TYPES.reduce((s,t)=>s+getQuantite(card.id,o,t),0);
+    const qtyFor=(cardId,o,t)=>groupedQty.get(String(cardId)+'|'+o+'|'+t)||0;
+    const qtyByOwner=(card,o)=>TYPES.reduce((s,t)=>s+qtyFor(card.id,o,t),0);
     // price = { normal, reverse }. On valorise le Reverse au prix reverse, le reste au prix normal.
     const addCard=(card,price)=>{
       const pn=(price&&price.normal!=null)?price.normal:0;
@@ -3027,7 +3043,7 @@ async function renderStock(){
       priced++;
       stockOwners.forEach(o=>{
         let v=0;
-        TYPES.forEach(t=>{ const q=getQuantite(card.id,o,t); v += q*(t==='r'?pr:pn); });
+        TYPES.forEach(t=>{ const q=qtyFor(card.id,o,t); v += q*(t==='r'?pr:pn); });
         perOwner[o]+=v; grand+=v;
       });
     };
