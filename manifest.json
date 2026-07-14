@@ -1,12 +1,13 @@
 {
-  "name": "PokeCards Collection",
-  "short_name": "PokeCards",
+  "name": "Pokedoubles Manager",
+  "short_name": "Pokedoubles",
   "description": "Gestion de doubles de cartes Pokémon",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0f1117",
   "theme_color": "#6366f1",
   "orientation": "portrait",
+  "gcm_sender_id": "103953800507",
   "icons": [
     {
       "src": "/icon-192.png",
