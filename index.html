@@ -1770,7 +1770,7 @@ function switchTab(tab){
   document.getElementById('subheader').style.display = tab==='collection' ? '' : 'none';
   if(tab==='scan'){ renderScan(); }
   if(tab==='vente'){ renderVente(); }
-  if(tab==='stock' && stockDirty){ renderStock(); stockDirty=false; }
+  if(tab==='stock' && stockDirty){ renderStock().catch(console.error); stockDirty=false; }
   if(tab==='profile'){ renderProfile(); setTimeout(refreshPushButtonState,50); }
   if(tab==='transfer'){ renderTransfer(); }
   if(tab==='messages'){ refreshMessagesBadge(); renderMessages(); }
@@ -2905,13 +2905,41 @@ function closeModal(){
 }
 
 /* ══ STOCK PUBLIC ══════════════════════════════════════ */
-function renderStock(){
+async function renderStock(){
   const body=document.getElementById('stockBody');
   body.innerHTML='';
   if(!currentUser){
     body.innerHTML='<div class="empty-state"><h3>Accès réservé</h3><p>Connecte-toi pour voir ton stock.</p></div>';
     return;
   }
+
+  // Recharge systématiquement la source de vérité Supabase avant de calculer
+  // les stocks. Cela évite qu'un ancien cache local conserve des quantités
+  // supprimées ou déjà modifiées.
+  body.innerHTML='<div class="loading"><div class="spinner"></div><span>Actualisation du stock depuis Supabase…</span></div>';
+  try{
+    const freshQuantites=await sbGet(
+      'quantites',
+      '?select=id,carte_id,joueur,rarete,quantite'
+    );
+    if(Array.isArray(freshQuantites)){
+      quantites=freshQuantites;
+      try{
+        localStorage.setItem('pokecards_quantites_cache',JSON.stringify({
+          t:Date.now(),
+          rows:freshQuantites
+        }));
+      }catch(e){}
+    }
+  }catch(e){
+    console.error('Actualisation directe du stock impossible',e);
+    showToast('⚠️ Stock affiché depuis le cache local');
+  }
+
+  // L'utilisateur a pu quitter l'onglet pendant la requête.
+  if(activeTab!=='stock') return;
+  body.innerHTML='';
+
   const stockOwners = isKnownOwner(currentUser) ? OWNERS : [currentUser];
   const stats={};
   stockOwners.forEach(o=>{ stats[o]={total:0,byType:{c:0,r:0,p:0,m:0},doubles:[]}; });
@@ -2926,7 +2954,7 @@ function renderStock(){
   });
 
   // Résumé
-  const title=document.createElement('div'); title.className='section-title'; title.innerHTML='📊 Résumé des stocks';
+  const title=document.createElement('div'); title.className='section-title'; title.innerHTML='📊 Résumé des stocks <small style="font-size:11px;color:var(--text2);font-weight:700">Synchronisé avec Supabase</small>';
   body.appendChild(title);
   const grid=document.createElement('div'); grid.className='stock-grid';
   stockOwners.forEach(owner=>{
