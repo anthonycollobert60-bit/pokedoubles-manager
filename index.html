@@ -678,7 +678,6 @@ window.PokeCardsFCM = {
   <nav class="nav-tabs" id="appMenu">
     <button class="nav-tab active" data-tab="profile" id="tabProfile" style="display:none;" onclick="switchTab('profile')">👤 Profil</button>
     <button class="nav-tab" data-tab="collection" id="tabCollection" onclick="switchTab('collection')">📖 Collection</button>
-    <button class="nav-tab" data-tab="scan" id="tabScan" style="display:none;" onclick="switchTab('scan')">📷 Scan</button>
     <button class="nav-tab" data-tab="stock" id="tabStock" onclick="switchTab('stock')">📦 Stock</button>
     <button class="nav-tab" data-tab="transfer" id="tabTransfer" style="display:none;" onclick="switchTab('transfer')">🔄 Transfert</button>
     <button class="nav-tab" data-tab="messages" id="tabMessages" style="display:none;" onclick="switchTab('messages')">💬 Messages <span class="msg-badge" id="messagesUnreadBadge">0</span></button>
@@ -6721,33 +6720,34 @@ function strictScanPostCheckV2(ocrText, chosenCard, candidateCards){
 
 
 <style>
-/* POKECARDS MANAGER V5 — le scan appartient désormais à Ma Collection */
-#tabScan{display:none!important}
+/* MANAGER V6 — uniquement le scanner est retiré */
+#tabScan,
+.nav-tab[data-tab="scan"]{
+  display:none!important;
+}
 </style>
 <script>
 (function(){
-  const oldSwitchManagerV5=window.switchTab;
-  window.switchTab=function(tab){
-    if(tab==='scan') tab='collection';
-    return oldSwitchManagerV5(tab);
-  };
-  switchTab=window.switchTab;
-
-  const oldEnsureManagerV5=window.ensureMainTabs;
-  if(typeof oldEnsureManagerV5==='function'){
-    window.ensureMainTabs=function(){
-      const result=oldEnsureManagerV5();
-      const scan=document.getElementById('tabScan');
-      if(scan) scan.style.setProperty('display','none','important');
-      return result;
-    };
-    ensureMainTabs=window.ensureMainTabs;
+  function removeOnlyScanV6(){
+    document.querySelectorAll('#tabScan,.nav-tab[data-tab="scan"]').forEach(el=>el.remove());
   }
 
-  document.addEventListener('DOMContentLoaded',()=>{
-    const scan=document.getElementById('tabScan');
-    if(scan) scan.remove();
-  });
+  document.addEventListener('DOMContentLoaded',removeOnlyScanV6);
+  setTimeout(removeOnlyScanV6,0);
+  setTimeout(removeOnlyScanV6,500);
+
+  const originalSwitchV6=window.switchTab;
+  if(typeof originalSwitchV6==='function'){
+    window.switchTab=function(tab){
+      if(tab==='scan') tab='collection';
+      return originalSwitchV6(tab);
+    };
+    switchTab=window.switchTab;
+  }
+
+  // Observe uniquement l'apparition éventuelle d'un bouton Scan recréé.
+  const observer=new MutationObserver(removeOnlyScanV6);
+  observer.observe(document.documentElement,{childList:true,subtree:true});
 })();
 </script>
 
