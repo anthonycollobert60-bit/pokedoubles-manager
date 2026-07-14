@@ -678,6 +678,7 @@ window.PokeCardsFCM = {
   <nav class="nav-tabs" id="appMenu">
     <button class="nav-tab active" data-tab="profile" id="tabProfile" style="display:none;" onclick="switchTab('profile')">👤 Profil</button>
     <button class="nav-tab" data-tab="collection" id="tabCollection" onclick="switchTab('collection')">📖 Collection</button>
+    <button class="nav-tab" data-tab="scan" id="tabScan" style="display:none;" onclick="switchTab('scan')">📷 Scan</button>
     <button class="nav-tab" data-tab="stock" id="tabStock" onclick="switchTab('stock')">📦 Stock</button>
     <button class="nav-tab" data-tab="transfer" id="tabTransfer" style="display:none;" onclick="switchTab('transfer')">🔄 Transfert</button>
     <button class="nav-tab" data-tab="messages" id="tabMessages" style="display:none;" onclick="switchTab('messages')">💬 Messages <span class="msg-badge" id="messagesUnreadBadge">0</span></button>
@@ -6716,39 +6717,6 @@ function strictScanPostCheckV2(ocrText, chosenCard, candidateCards){
   return chosenCard;
 }
 
-</script>
-
-
-<style>
-/* MANAGER V6 — uniquement le scanner est retiré */
-#tabScan,
-.nav-tab[data-tab="scan"]{
-  display:none!important;
-}
-</style>
-<script>
-(function(){
-  function removeOnlyScanV6(){
-    document.querySelectorAll('#tabScan,.nav-tab[data-tab="scan"]').forEach(el=>el.remove());
-  }
-
-  document.addEventListener('DOMContentLoaded',removeOnlyScanV6);
-  setTimeout(removeOnlyScanV6,0);
-  setTimeout(removeOnlyScanV6,500);
-
-  const originalSwitchV6=window.switchTab;
-  if(typeof originalSwitchV6==='function'){
-    window.switchTab=function(tab){
-      if(tab==='scan') tab='collection';
-      return originalSwitchV6(tab);
-    };
-    switchTab=window.switchTab;
-  }
-
-  // Observe uniquement l'apparition éventuelle d'un bouton Scan recréé.
-  const observer=new MutationObserver(removeOnlyScanV6);
-  observer.observe(document.documentElement,{childList:true,subtree:true});
-})();
 </script>
 
 </body>
