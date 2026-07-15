@@ -2370,7 +2370,8 @@ function renderCards(collId, collNom, blocId, blocNom){
     </button>
     ${currentUser==='anthony'?`<button class="back-btn" style="margin-left:8px;" onclick="setCollectionTotal('${collId}')" title="Définir le nombre de cartes du set (pour gérer les cartes secrètes sans reverse)">⚙️ ${totalLabel}</button>`:''}`;
   const body=document.getElementById('appBody');
-  const cards=cartes.filter(c=>c.collection_id===collId);
+  const cards=cartes.filter(c=>c.collection_id===collId)
+    .sort((a,b)=>cardOrderNum(a.numero)-cardOrderNum(b.numero));
   const viewOwner=currentUser||null;
   const owners=viewOwner?[viewOwner]:OWNERS;
 
