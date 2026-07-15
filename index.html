@@ -948,13 +948,23 @@ function cardOrderNum(numero){
 function computeOrder(collId, numero){
   const collCartes=cartes.filter(c=>c.collection_id===collId);
   if(collCartes.length===0) return 0;
-  // Trouver la position selon le numéro
   const n=cardOrderNum(numero);
-  // Trouver l'index d'insertion parmi les cartes existantes triées
   const sorted=[...collCartes].sort((a,b)=>cardOrderNum(a.numero)-cardOrderNum(b.numero));
   const pos=sorted.findIndex(c=>cardOrderNum(c.numero)>n);
-  if(pos<0) return (sorted[sorted.length-1].ordre||sorted.length)+1;
-  return sorted[pos].ordre??pos;
+  if(pos<0){
+    // Numéro le plus élevé de la collection : se place après la dernière carte.
+    const last=sorted[sorted.length-1];
+    const lastOrdre=typeof last.ordre==='number' ? last.ordre : sorted.length-1;
+    return lastOrdre+1;
+  }
+  // Insère entre la carte précédente et la carte suivante (au lieu de copier
+  // l'ordre de la carte suivante, ce qui créait une collision et pouvait
+  // faire retomber la carte tout à la fin lors du tri).
+  const next=sorted[pos];
+  const prev=pos>0?sorted[pos-1]:null;
+  const nextOrdre=typeof next.ordre==='number' ? next.ordre : pos;
+  const prevOrdre=prev ? (typeof prev.ordre==='number' ? prev.ordre : pos-1) : nextOrdre-1;
+  return (prevOrdre+nextOrdre)/2;
 }
 
 // Tri chronologique des collections via date TCGdex.
