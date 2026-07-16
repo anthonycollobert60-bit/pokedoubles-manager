@@ -705,7 +705,6 @@ window.PokeCardsFCM = {
         <option value="r">Reverse (R)</option>
         <option value="p">Pokéball (P)</option>
         <option value="m">Masterball (M)</option>
-        <option value="wishlist">❤️ Cartes recherchées</option>
       </select>
     </div>
     <div id="breadcrumbArea"></div>
@@ -2393,7 +2392,6 @@ function renderCards(collId, collNom, blocId, blocNom){
       return total>0?`<div class="badge badge-${t}">${t.toUpperCase()} ${total}</div>`:'';
     }).join('');
     return `<div class="poke-card" data-id="${card.id}" data-nom="${(card.nom||'').toLowerCase()}" data-num="${(card.numero||'').toLowerCase()}">
-      ${currentUser?`<button class="wish-heart ${isWishlisted(card.id)?'active':''}" data-wish-card-id="${card.id}" onclick="toggleWishlist('${card.id}',event)">${isWishlisted(card.id)?'❤️':'🤍'}</button>`:''}
       <img src="${esc(img)}" alt="${esc(card.nom)}" loading="lazy">
       <div class="poke-card-name">${esc(card.nom)}</div>
       <div class="poke-card-num">${esc(card.numero||'')}</div>
@@ -2497,7 +2495,7 @@ function fillModal(carteId){
       actionBar.style.cssText='display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin:8px 0;';
       modalPriceEl.parentNode.insertBefore(actionBar, modalPriceEl);
     }
-    actionBar.innerHTML=`${currentUser?`<button class="btn-sm" id="modalWishBtn" onclick="toggleWishlist('${carteId}',event)">${isWishlisted(carteId)?'❤️ Recherchée':'🤍 Rechercher'}</button>`:''}${currentUser?`<button class="btn-sm" onclick="shareCurrentCardToChat('${carteId}')">💬 Montrer à un ami</button>`:''}`;
+    actionBar.innerHTML=`${currentUser?`<button class="btn-sm" onclick="shareCurrentCardToChat('${carteId}')">💬 Montrer à un ami</button>`:''}`;
   }
 
   // Prix CardMarket (ou prix manuel s'il existe). Bouton de correction côté Anthony.
@@ -4282,19 +4280,7 @@ function renderTransfer(){
       <h3>Panier de transfert (${transferCart.length})</h3>
       ${rows || '<div class="empty-state"><h3>Aucune carte ajoutée</h3></div>'}
       <button class="btn-sm" onclick="validateTransferCart()" ${transferCart.length?'':'disabled'}>Valider tout le transfert</button>
-    </div>
-    <div class="admin-section" id="smartExchangeBox">
-      <h3>🤝 Échange intelligent</h3>
-      <div style="font-size:12px;color:var(--text2);margin-bottom:10px;">Compare tes doubles avec les cartes recherchées par tes amis.</div>
-      <div class="form-row">
-        <select class="form-select" id="smartFriendSelect" onchange="renderSmartExchange()">
-          ${chatFriendOptions(document.getElementById('smartFriendSelect')?.value||chatFriends()[0]||'')}
-        </select>
-        <button class="btn-sm" onclick="renderSmartExchange()">Analyser</button>
-      </div>
-      <div id="smartExchangeResults" class="smart-grid"></div>
     </div>`;
-  setTimeout(renderSmartExchange,50);
 }
 
 
