@@ -6443,30 +6443,30 @@ function doGlobalSearch(){
   const owners=viewOwner?[viewOwner]:OWNERS;
   const matches=cartes.filter(c=>(c.nom||'').toLowerCase().includes(q)||(c.numero||'').toLowerCase().includes(q)).slice(0,60);
   if(matches.length===0){ res.innerHTML='<div class="gs-empty">Aucune carte trouvée pour "'+q+'"</div>'; return; }
-  res.innerHTML='';
-  matches.forEach(card=>{
+  res.innerHTML=`<div class="cards-grid">${matches.map(card=>{
     const coll=collections.find(c=>c.id===card.collection_id);
     const bloc=blocs.find(b=>b.id===coll?.bloc_id);
+    const img=optImg(card.image);
     const badgesHtml=TYPES.map(t=>{
       const total=owners.reduce((s,o)=>s+getQuantite(card.id,o,t),0);
-      return total>0?`<span class="badge badge-${t}" style="font-size:9px;padding:1px 5px;">${t.toUpperCase()} ×${total}</span>`:'';
-    }).filter(Boolean).join(' ');
-    const cachedPrice=priceCache[card.tcgdex_id];
-    const priceHtml=cachedPrice!=null?`<div class="gs-item-price">${cachedPrice.toFixed(2)} €</div>`:'';
-    const item=document.createElement('div');
-    item.className='gs-item';
-    item.innerHTML=`<img src="${optImg(card.image)}" alt="${esc(card.nom)}" loading="lazy">
-      <div class="gs-item-info">
-        <div class="gs-item-name">${esc(card.nom)}</div>
-        <div class="gs-item-meta">${esc(coll?.nom||'')} · ${esc(bloc?.nom||'')} · n°${esc(card.numero||'')}</div>
-        <div style="margin-top:3px;">${badgesHtml||'<span style="font-size:10px;color:var(--text2);">Non possédée</span>'}</div>
-      </div>
-      ${priceHtml}`;
-    item.onclick=()=>{
+      return total>0?`<div class="badge badge-${t}">${t.toUpperCase()} ${total}</div>`:'';
+    }).join('');
+    return `<div class="poke-card" data-id="${card.id}">
+      <img src="${esc(img)}" alt="${esc(card.nom)}" loading="lazy">
+      <div class="poke-card-name">${esc(card.nom)}</div>
+      <div class="poke-card-num">${esc(coll?.nom||'')} · n°${esc(card.numero||'')}</div>
+      <div class="badges-row">${badgesHtml}</div>
+    </div>`;
+  }).join('')}</div>`;
+  res.querySelectorAll('.poke-card[data-id]').forEach(el=>{
+    el.onclick=()=>{
+      const cardId=el.dataset.id;
+      const card=cartes.find(c=>String(c.id)===cardId);
+      const coll=collections.find(c=>c.id===card?.collection_id);
+      const bloc=blocs.find(b=>b.id===coll?.bloc_id);
       closeGlobalSearch();
-      if(coll&&bloc){ switchTab('collection'); renderCards(coll.id,coll.nom,bloc.id,bloc.nom); setTimeout(()=>openModal(card.id),120); }
+      if(coll&&bloc){ switchTab('collection'); renderCards(coll.id,coll.nom,bloc.id,bloc.nom); setTimeout(()=>openModal(cardId),120); }
     };
-    res.appendChild(item);
   });
 }
 
