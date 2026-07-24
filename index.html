@@ -4744,6 +4744,15 @@ async function importSelected(){
     document.getElementById('tcgdexResults').innerHTML='';
     document.getElementById('tcgdexSelected').style.display='none';
     renderAdmin();
+    // renderAdmin() reconstruit tout le panneau depuis zéro, ce qui remet
+    // la liste "Supprimer une carte" à vide. Sans ceci, une carte tout
+    // juste importée via TCGdex n'apparaissait jamais dans cette liste
+    // tant qu'on ne resélectionnait pas manuellement la collection.
+    requestAnimationFrame(()=>{
+      const collSel=document.getElementById('delCollForCarteId');
+      if(collSel){ collSel.value=collId; }
+      if(typeof loadCartesForDel==='function') loadCartesForDel();
+    });
   } catch(e) { showToast('❌ Erreur import: '+e.message); }
 }
 
