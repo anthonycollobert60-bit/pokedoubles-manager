@@ -944,8 +944,8 @@ function cardOrderNum(numero){
 }
 
 // Calcule l'ordre correct pour une nouvelle carte dans une collection
-function computeOrder(collId, numero){
-  const collCartes=cartes.filter(c=>c.collection_id===collId);
+function computeOrder(collId, numero, sourceCartes=cartes){
+  const collCartes=sourceCartes.filter(c=>c.collection_id===collId);
   if(collCartes.length===0) return 0;
   const n=cardOrderNum(numero);
   const sorted=[...collCartes].sort((a,b)=>cardOrderNum(a.numero)-cardOrderNum(b.numero));
@@ -4718,12 +4718,18 @@ async function importSelected(){
   try {
     // Trier par numéro avant insertion
     const sorted=[...toImport].sort((a,b)=>cardOrderNum(a.numero)-cardOrderNum(b.numero));
-    // Calculer l'ordre de départ (après les cartes déjà existantes dans la collection)
-    const existingInColl=cartes.filter(c=>c.collection_id===collId);
-    const startOrdre=existingInColl.length>0
-      ? Math.max(...existingInColl.map(c=>c.ordre??0))+1
-      : 0;
-    const batch=sorted.map((c,i)=>({collection_id:collId,nom:c.nom,numero:c.numero,image:c.imageHigh,ordre:startOrdre+i,tcgdex_id:c.tcgdexId||null}));
+    // Ordre calculé selon la position du numéro dans la collection (comme
+    // pour l'ajout manuel), et non plus toujours après le maximum existant.
+    // Avant ce correctif, importer une seule carte pour combler un manque
+    // dans une collection déjà remplie la plaçait systématiquement tout à
+    // la fin de la liste, peu importe son propre numéro.
+    const workingCartes=[...cartes];
+    const batch=sorted.map(c=>{
+      const ordre=computeOrder(collId, c.numero, workingCartes);
+      const row={collection_id:collId,nom:c.nom,numero:c.numero,image:c.imageHigh,ordre,tcgdex_id:c.tcgdexId||null};
+      workingCartes.push(row); // pour que la carte suivante du lot en tienne compte
+      return row;
+    });
     const inserted=await sbPost('cartes',batch);
     cartes=[...cartes,...inserted].sort((a,b)=>(a.ordre??9999)-(b.ordre??9999));
 
@@ -4773,9 +4779,6 @@ function loadCartesForDel(){
   if(!row) return;
   if(!collId){ row.style.display='none'; return; }
   const collCartes=cartes.filter(c=>c.collection_id===collId).sort((a,b)=>(a.ordre??0)-(b.ordre??0));
-  // ═══ DIAGNOSTIC TEMPORAIRE — à retirer une fois le problème identifié ═══
-  alert('Total cartes en mémoire: '+cartes.length+' | collId recherché: "'+collId+'" | cartes trouvées pour cette collection: '+collCartes.length+' | exemple id collection d\'une carte: "'+(cartes[0]?.collection_id||'aucune')+'"');
-  // ═══ FIN DIAGNOSTIC TEMPORAIRE ═══
   const sel=document.getElementById('delCarteId');
   if(sel){
     sel.innerHTML='<option value="">-- Choisir une carte --</option>'+
