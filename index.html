@@ -2243,7 +2243,7 @@ async function loadData(){
     const [b,c,ca,q,prices] = await Promise.all([
       sbGet('blocs','?select=*&order=ordre.asc'),
       sbGet('collections','?select=*&order=ordre.asc,nom.asc'),
-      sbGet('cartes','?select=*&order=ordre.asc'),
+      sbGet('cartes','?select=*&order=ordre.asc,id.asc'),
       sbGet('quantites','?select=*'),
       sbGet('card_prices','?select=carte_id,price_eur,price_reverse,updated_at,is_manual')
     ]);
@@ -4851,6 +4851,14 @@ async function addCarteManual(){
     document.getElementById('manualImg').value='';
     showToast('✅ Carte ajoutée');
     stockDirty=true;
+    // Rafraîchir aussi la liste déroulante de suppression si elle affiche
+    // cette même collection : sans ça, la carte tout juste ajoutée n'y
+    // apparaissait jamais tant qu'on ne changeait pas la collection
+    // sélectionnée puis ne revenait pas dessus (loadCartesForDel() n'était
+    // jamais rappelée après un ajout, contrairement aux blocs/collections).
+    if(document.getElementById('delCollForCarteId')?.value===collId && typeof loadCartesForDel==='function'){
+      loadCartesForDel();
+    }
     // Rafraîchir l'affichage si on regarde justement cette collection
     if(currentCollId===collId){
       const coll=collections.find(c=>c.id===collId);
