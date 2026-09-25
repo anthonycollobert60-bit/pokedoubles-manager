@@ -3244,6 +3244,11 @@ async function renderStock(){
     const type=String(q.rarete||'').trim();
     const value=Math.max(0,parseInt(q.quantite)||0);
     if(!stockOwners.includes(owner) || !TYPES.includes(type) || value<=0) return;
+    // Ne compter que les cartes du jeu actuellement affiché : sans ce filtre,
+    // le résumé additionnait TOUTES les lignes Supabase (tous jeux confondus)
+    // alors que "X cartes en double" ne comptait, lui, que celles du jeu actif
+    // — d'où des totaux Pokémon affichés même en ayant sélectionné Gentle Mates.
+    if(!cardById.has(String(q.carte_id))) return;
 
     stats[owner].total+=value;
     stats[owner].byType[type]+=value;
