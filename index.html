@@ -768,6 +768,7 @@ window.PokeCardsFCM = {
     </button>
   </div>
   <nav class="nav-tabs" id="appMenu">
+    <button class="nav-tab" id="tabGameSwitch" onclick="openGameSwitcher()">🎮 Jeu : <span id="gameSwitchLabel"></span></button>
     <button class="nav-tab active" data-tab="profile" id="tabProfile" style="display:none;" onclick="switchTab('profile')">👤 Profil</button>
     <button class="nav-tab" data-tab="collection" id="tabCollection" onclick="switchTab('collection')">📖 Collection</button>
     <button class="nav-tab" data-tab="scan" id="tabScan" style="display:none;" onclick="switchTab('scan')">📷 Scan</button>
@@ -957,6 +958,57 @@ const ACCOUNTS = {
 };
 const OWNERS   = ['valentin','anthony'];
 const TYPES    = ['c','r','p','m'];
+
+// ══ MULTI-JEUX (Pokémon / Gentle Mates…) ═══════════════════════════════
+// Un seul jeu affiché à la fois : blocs/collections/cartes ne contiennent
+// jamais que le catalogue du jeu actif, chargé depuis Supabase filtré par
+// game_id. La table des doubles (quantites) n'est PAS filtrée : carte_id
+// est unique tous jeux confondus, donc les doubles restent justes puisque
+// stock/vente ne regardent que les cartes du jeu actif.
+const AVAILABLE_GAMES=[
+  {id:'pokemon', label:'Pokémon', emoji:'🔴'},
+  {id:'gentlemates', label:'Gentle Mates', emoji:'🎮'}
+];
+let currentGame = localStorage.getItem('pokecards_active_game') || 'pokemon';
+function activeGameLabel(){ return (AVAILABLE_GAMES.find(g=>g.id===currentGame)||AVAILABLE_GAMES[0]).label; }
+function fastCacheKeyForGame(gameId){ return 'pokecards_fast_cache_v2__'+gameId; }
+async function switchGame(gameId){
+  if(gameId===currentGame || !AVAILABLE_GAMES.some(g=>g.id===gameId)) return;
+  currentGame=gameId;
+  localStorage.setItem('pokecards_active_game', gameId);
+  blocs=[]; collections=[]; cartes=[];
+  currentBlocId=null; currentCollId=null; currentCardId=null;
+  const label=(AVAILABLE_GAMES.find(g=>g.id===gameId)||{}).label||gameId;
+  showToast('🔄 Chargement de '+label+'…');
+  try{ await loadData(); }catch(e){ console.warn('Changement de jeu',e); }
+  const lbl=document.getElementById('gameSwitchLabel');
+  if(lbl) lbl.textContent=(AVAILABLE_GAMES.find(g=>g.id===gameId)||{}).emoji+' '+label;
+}
+function openGameSwitcher(){
+  try{ closeAppMenu&&closeAppMenu(); }catch(e){}
+  let ov=document.getElementById('gameSwitchOverlay');
+  if(ov) ov.remove();
+  ov=document.createElement('div');
+  ov.id='gameSwitchOverlay';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+  ov.innerHTML='<div style="background:var(--card,#1b1e27);border-radius:16px;padding:20px;max-width:340px;width:100%">'
+    +'<h3 style="margin:0 0 14px">Choisir un jeu</h3>'
+    +AVAILABLE_GAMES.map(function(g){
+      return '<button class="btn-secondary" style="width:100%;margin-bottom:8px;text-align:left" data-switch-game="'+esc(g.id)+'">'
+        +g.emoji+' '+esc(g.label)+(g.id===currentGame?' ✓':'')+'</button>';
+    }).join('')
+    +'<button class="btn-secondary" style="width:100%;margin-top:6px" id="gameSwitchCancel">Annuler</button>'
+    +'</div>';
+  document.body.appendChild(ov);
+  ov.addEventListener('click',function(e){ if(e.target===ov) ov.remove(); });
+  ov.querySelectorAll('[data-switch-game]').forEach(function(btn){
+    btn.onclick=function(){ ov.remove(); switchGame(btn.dataset.switchGame); };
+  });
+  var cancelBtn=document.getElementById('gameSwitchCancel');
+  if(cancelBtn) cancelBtn.onclick=function(){ ov.remove(); };
+}
+window.switchGame=switchGame;
+window.openGameSwitcher=openGameSwitcher;
 const TYPE_LABELS = { c:'Commune', r:'Reverse', p:'Pokéball', m:'Masterball' };
 const TCGDEX   = 'https://api.tcgdex.net/v2/fr';
 
@@ -1361,7 +1413,7 @@ function clearCache() {
   localStorage.removeItem('pokecards_blocs');
   localStorage.removeItem('pokecards_order');
   localStorage.removeItem('pokecards_ts');
-  localStorage.removeItem(FAST_CACHE_KEY);
+  AVAILABLE_GAMES.forEach(function(g){ localStorage.removeItem(fastCacheKeyForGame(g.id)); });
   blocs=[]; collections=[]; cartes=[]; quantites=[];
   showToast('🗑️ Ancien cache local vidé — rechargement Supabase…');
   setTimeout(()=>loadData(),800);
@@ -1836,6 +1888,7 @@ async function doLogout(){
 function enterApp(){
   document.getElementById('screen-login').classList.remove('active');
   document.getElementById('screen-app').classList.add('active');
+  (function(){ var l=document.getElementById('gameSwitchLabel'); if(l) l.textContent=activeGameLabel(); })();
   const pass=document.getElementById('authPassword'); if(pass) pass.value='';
 
   if(currentUser){
@@ -1872,6 +1925,7 @@ function enterApp(){
   loadFriends();
   loadWishlist();
   loadNotifications();
+  setTimeout(()=>ensurePushRegistration('ouverture'),4000);
   startLivePolling();
   if(['anthony','valentin'].includes(currentUser)){
     setTimeout(()=>loadVenteDemandes(true),1200);
@@ -2377,11 +2431,10 @@ async function renderUpdates(){
 
 
 /* ══ DATA LOADING ══════════════════════════════════════ */
-const FAST_CACHE_KEY='pokecards_fast_cache_v2';
 const FAST_CACHE_MAX_AGE=1000*60*60*12;
 function loadFromCache(){
   try{
-    const raw=localStorage.getItem(FAST_CACHE_KEY);
+    const raw=localStorage.getItem(fastCacheKeyForGame(currentGame));
     if(!raw) return false;
     const obj=JSON.parse(raw);
     if(!obj || !obj.t || Date.now()-obj.t>FAST_CACHE_MAX_AGE) return false;
@@ -2397,7 +2450,7 @@ function loadFromCache(){
 
 function saveToCache(){
   try{
-    localStorage.setItem(FAST_CACHE_KEY, JSON.stringify({
+    localStorage.setItem(fastCacheKeyForGame(currentGame), JSON.stringify({
       t:Date.now(),
       blocs,collections,cartes,quantites,
       prices:Object.entries(storedPrices||{}).map(([carte_id,p])=>({carte_id,price_eur:p.price_eur,price_reverse:p.price_reverse,updated_at:p.updated_at,is_manual:p.is_manual}))
@@ -2417,9 +2470,9 @@ async function loadData(){
   // 2. Rafraîchissement depuis Supabase en arrière-plan
   try {
     const [b,c,ca,q,prices] = await Promise.all([
-      sbGet('blocs','?select=*&order=ordre.asc'),
-      sbGet('collections','?select=*&order=ordre.asc,nom.asc'),
-      sbGet('cartes','?select=*&order=ordre.asc,id.asc'),
+      sbGet('blocs','?select=*&game_id=eq.'+encodeURIComponent(currentGame)+'&order=ordre.asc'),
+      sbGet('collections','?select=*&game_id=eq.'+encodeURIComponent(currentGame)+'&order=ordre.asc,nom.asc'),
+      sbGet('cartes','?select=*&game_id=eq.'+encodeURIComponent(currentGame)+'&order=ordre.asc,id.asc'),
       sbGet('quantites','?select=*'),
       sbGet('card_prices','?select=carte_id,price_eur,price_reverse,updated_at,is_manual')
     ]);
@@ -3672,6 +3725,7 @@ async function requestPushPermission(){
     }
     await saveFcmToken(res.token);
     localStorage.setItem('pokecards_push_enabled', '1');
+    localStorage.setItem('pokecards_push_checked_at', String(Date.now()));
     showToast('✅ Vraies notifications push activées');
     refreshPushButtonState();
     maybeShowBrowserNotification('PokeDoubles Manager','Notifications push activées');
@@ -3707,6 +3761,43 @@ async function saveFcmToken(token){
     }catch(_){}
   }
 }
+
+/* ── Renouvellement silencieux du jeton push ─────────────────────────
+   Avant : le jeton n'était enregistré que lorsqu'on appuyait sur
+   « Activer les notifications ». Dès que ce jeton devenait invalide
+   (service worker mis à jour, nouveau déploiement, rotation Firebase…),
+   les notifications s'arrêtaient jusqu'à ce que chacun réactive à la main.
+   Maintenant : si le navigateur a DÉJÀ accordé l'autorisation, on redemande
+   silencieusement à Firebase le jeton courant à chaque ouverture (sans aucune
+   fenêtre de permission) et on le réenregistre via saveFcmToken() s'il a changé. */
+let _pushEnsureRunning=false;
+async function ensurePushRegistration(reason){
+  if(_pushEnsureRunning) return;
+  if(!currentUser || !FCM_ENABLED) return;
+  if(!('Notification' in window) || Notification.permission!=='granted') return;
+  if(!window.PokeCardsFCM) return;
+  _pushEnsureRunning=true;
+  try{
+    const res=await window.PokeCardsFCM.getToken();
+    if(!res || !res.ok || !res.token){
+      console.warn('Renouvellement push impossible ('+(reason||'')+')', res&&(res.error||res.reason));
+      return;
+    }
+    await saveFcmToken(res.token);
+    localStorage.setItem('pokecards_push_enabled','1');
+    localStorage.setItem('pokecards_push_checked_at', String(Date.now()));
+    refreshPushButtonState();
+  }catch(e){
+    console.warn('Renouvellement push en erreur', e);
+  }finally{
+    _pushEnsureRunning=false;
+  }
+}
+document.addEventListener('visibilitychange',()=>{
+  if(document.hidden) return;
+  const last=parseInt(localStorage.getItem('pokecards_push_checked_at')||'0')||0;
+  if(Date.now()-last>6*60*60*1000) ensurePushRegistration('retour');
+});
 
 function maybeShowBrowserNotification(title, body){
   try{
