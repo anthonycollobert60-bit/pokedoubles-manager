@@ -78,7 +78,7 @@ html[data-theme="light"][data-game-theme="gentlemates"] #screen-app{
 html[data-theme="dark"][data-game-theme="pokemon"] #screen-app{
   --bg:#1a0d0a;--bg2:#241310;--surface:#2b1714;--surface2:#3a1e19;
   --border:#5c2a20;--text:#fdf0e6;--text2:#d9a679;
-  --accent:#ed1d24;--accent2:#ffcb05;--accent-dark:#7a0d08;--glow:rgba(237,29,36,0.4);--shadow:rgba(0,0,0,0.6);
+  --accent:#ff1f2e;--accent2:#ffcb05;--accent-dark:#a3120f;--glow:rgba(255,31,46,0.4);--shadow:rgba(0,0,0,0.6);
 }
 html[data-theme="light"][data-game-theme="pokemon"] #screen-app{
   --bg:#fff8ec;--bg2:#ffffff;--surface:#ffffff;--surface2:#fff1d6;
@@ -2211,6 +2211,21 @@ async function submitReport(){
   }
 }
 
+async function deleteReport(reportId){
+  if(profileKey(currentUser)!=='anthony'){ showToast('Action réservée à Anthony'); return; }
+  if(!confirm('Supprimer définitivement ce report ?')) return;
+  try{
+    await sbDel('app_notifications','?id=eq.'+encodeURIComponent(reportId));
+    appReports=appReports.filter(r=>String(r.id)!==String(reportId));
+    showToast('🗑️ Report supprimé');
+    renderReports();
+  }catch(e){
+    console.error(e);
+    showToast('Impossible de supprimer ce report');
+  }
+}
+window.deleteReport=deleteReport;
+
 async function updateReportStatus(reportId, status){
   if(profileKey(currentUser)!=='anthony'){ showToast('Action réservée à Anthony'); return; }
 
@@ -2393,6 +2408,7 @@ async function renderReports(){
             <button class="report-status-btn ${status==='sent'?'active':''}" onclick="updateReportStatus('${esc(String(r.id))}','sent')">📨 Envoyé</button>
             <button class="report-status-btn ${status==='open'?'active':''}" onclick="updateReportStatus('${esc(String(r.id))}','open')">🚨 Ouvert</button>
             <button class="report-status-btn ${status==='progress'?'active':''}" onclick="updateReportStatus('${esc(String(r.id))}','progress')">🟡 En cours</button>
+            <button class="report-status-btn" style="margin-left:auto;color:#ef4444;border-color:#ef4444" onclick="deleteReport('${esc(String(r.id))}')">🗑️ Supprimer</button>
           </div>
           <div class="report-close-box">
             <label class="report-label">Phrase de clôture
