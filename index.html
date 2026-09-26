@@ -6917,7 +6917,11 @@ function extractPokemonNameScanV2(text){
   const lines=String(text||'').split(/\n+/).map(l=>normalizeScanTextV2(l)).filter(Boolean);
   const ignore=[
     'base','stage','pv','hp','pokemon','faiblesse','resistance','retraite','illustr','illus',
-    'nintendo','creatures','game freak','taille','poids','attaque','degats','ce pokemon'
+    'nintendo','creatures','game freak','taille','poids','attaque','degats','ce pokemon',
+    // Mots parasites propres aux cartes Gentle Mates (catégorie imprimée, mentions légales…),
+    // pour éviter qu'ils soient pris à tort pour le nom de la carte.
+    'joueur','coach','instant','objet-lien','objet','lien','neutre','essence',
+    'tradingcardgame','trading card game','gentlemates','gentle mates'
   ];
   const candidates=[];
   for(const line of lines.slice(0,10)){
