@@ -2641,7 +2641,7 @@ function renderCards(collId, collNom, blocId, blocNom){
       const total=owners.reduce((s,o)=>s+getQuantite(card.id,o,t),0);
       return total>0?`<div class="badge badge-${t}">${t.toUpperCase()} ${total}</div>`:'';
     }).join('');
-    return `<div class="poke-card" data-id="${card.id}" data-nom="${(card.nom||'').toLowerCase()}" data-num="${(card.numero||'').toLowerCase()}">
+    return `<div class="poke-card" data-id="${card.id}" data-nom="${(card.nom||'').toLowerCase()}" data-num="${(card.numero||'').toLowerCase()}" data-rarete="${(card.rarete_affichee||'').trim().toLowerCase()}">
       <img src="${esc(img)}" alt="${esc(card.nom)}" loading="lazy">
       <div class="poke-card-name">${esc(card.nom)}</div>
       <div class="poke-card-num">${esc(card.numero||'')}</div>
@@ -2652,6 +2652,7 @@ function renderCards(collId, collNom, blocId, blocNom){
 
   body.innerHTML=`<div class="section-title">🃏 ${esc(collNom)}</div>
     <div class="cards-grid" id="cardsGrid">${cardsHtml}</div>`;
+  updateTypeFilterOptions(cards);
 
   // Attacher les events onclick (ne peut pas être inline avec innerHTML)
   body.querySelectorAll('.poke-card').forEach(el=>{
@@ -2671,6 +2672,41 @@ function renderCards(collId, collNom, blocId, blocNom){
     if(ownsReverseView && sp.price_reverse!=null) parts.push(`<div class="price-badge price-badge-rev">R ${Number(sp.price_reverse).toFixed(2)} €</div>`);
     slot.innerHTML=parts.join('');
   });
+}
+
+// Ordre d'affichage des raretés officielles quand le jeu en fournit (ex.
+// Gentle Mates) ; tout le reste passe après, par ordre alphabétique.
+const RARETE_OFFICIELLE_ORDRE=['commune','peu commune','rare','épique','légendaire'];
+function updateTypeFilterOptions(cards){
+  const select=document.getElementById('typeFilter');
+  if(!select) return;
+  const previous=select.value;
+  const raretesOfficielles=[...new Set(
+    (cards||[]).map(c=>(c.rarete_affichee||'').trim()).filter(Boolean)
+  )].sort((a,b)=>{
+    const ia=RARETE_OFFICIELLE_ORDRE.indexOf(a.toLowerCase());
+    const ib=RARETE_OFFICIELLE_ORDRE.indexOf(b.toLowerCase());
+    if(ia===-1 && ib===-1) return a.localeCompare(b,'fr');
+    if(ia===-1) return 1;
+    if(ib===-1) return -1;
+    return ia-ib;
+  });
+  if(raretesOfficielles.length){
+    // Ce jeu n'a pas de variantes normale/reverse/pokéball/masterball (ex.
+    // Gentle Mates) : le filtre propose ses raretés officielles à la place.
+    select.innerHTML='<option value="all">Toutes les cartes</option>'
+      +raretesOfficielles.map(r=>'<option value="rarete:'+esc(r.toLowerCase())+'">'+esc(r)+'</option>').join('');
+  } else {
+    select.innerHTML=`
+      <option value="all">Toutes les raretés</option>
+      <option value="c">Commune (C)</option>
+      <option value="r">Reverse (R)</option>
+      <option value="p">Pokéball (P)</option>
+      <option value="m">Masterball (M)</option>
+    `;
+  }
+  if([...select.options].some(o=>o.value===previous)) select.value=previous;
+  else select.value='all';
 }
 
 function buildBadges(container, carteId, viewOwner){
@@ -2710,6 +2746,8 @@ function applyFilters(){
     }
     if(type==='wishlist'){
       if(!isWishlisted(carteId)) visible=false;
+    } else if(type.indexOf('rarete:')===0){
+      if((el.dataset.rarete||'')!==type.slice(7)) visible=false;
     } else if(type!=='all'){
       const has=owners.some(o=>getQuantite(carteId,o,type)>0);
       if(!has) visible=false;
