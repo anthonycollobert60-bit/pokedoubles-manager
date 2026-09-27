@@ -6842,7 +6842,7 @@ async function confirmScanAdd(){
   const newQty=await changeQty(card.id, currentUser, rarete, qty);
   // APPRENTISSAGE : retenir que ce texte OCR correspond à cette carte (pour les prochains scans)
   if(lastScanOcr) learnScan(lastScanOcr, card.id);
-  showToast(`✅ ${card.nom} (${rarete.toUpperCase()}) +${qty} — tu en as ${newQty}`);
+  showToast(`✅ ${qty} ajoutée${qty>1?'s':''} aux doubles`);
   // Rester sur la carte pour pouvoir ajouter une autre rareté : on met à jour le récap et on réinitialise la quantité
   updateScanRecap(card.id);
   scanQty=1;
