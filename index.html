@@ -5123,6 +5123,61 @@ async function syncCollectionDatesFromTcgdex(){
 }
 
 
+// Va chercher le type d'énergie d'une carte auprès de TCGdex (endpoint détail,
+// pas fourni par la liste du set). Utilisé au moment de l'import : rien à
+// installer, juste une requête de plus par carte, faite une seule fois.
+async function fetchTcgdexEnergie(tcgdexId){
+  if(!tcgdexId) return '';
+  try{
+    const data=await fetch(`${TCGDEX}/cards/${tcgdexId}`).then(r=>r.json());
+    return Array.isArray(data?.types) ? data.types.join(',') : '';
+  }catch(e){ return ''; }
+}
+// Récupère les types d'une liste de cartes avec un nombre de requêtes
+// simultanées limité (poli envers l'API gratuite, mais reste rapide).
+async function fetchTcgdexEnergieBatch(cardsList, concurrency=8, onProgress){
+  const out=new Array(cardsList.length).fill('');
+  let idx=0, done=0;
+  async function worker(){
+    while(idx<cardsList.length){
+      const i=idx++;
+      out[i]=await fetchTcgdexEnergie(cardsList[i].tcgdexId);
+      done++; if(onProgress) onProgress(done, cardsList.length);
+    }
+  }
+  await Promise.all(Array.from({length:Math.min(concurrency,cardsList.length)},worker));
+  return out;
+}
+
+// Remet à niveau les cartes DÉJÀ importées d'un bloc (types d'énergie
+// manquants) sans tout réimporter. Réservé à Anthony, à lancer une fois
+// depuis la console du navigateur : backfillEnergieForBloc('Méga Évolution')
+async function backfillEnergieForBloc(blocNom){
+  if(profileKey(currentUser)!=='anthony'){ showToast('Réservé à Anthony'); return; }
+  const bloc=blocs.find(b=>(b.nom||'').toLowerCase()===String(blocNom||'').toLowerCase());
+  if(!bloc){ showToast('Bloc introuvable : '+blocNom); console.warn('Blocs disponibles :', blocs.map(b=>b.nom)); return; }
+  const collIds=new Set(collections.filter(c=>c.bloc_id===bloc.id).map(c=>c.id));
+  const target=cartes.filter(c=>collIds.has(c.collection_id) && c.tcgdex_id && !c.energie);
+  if(!target.length){ showToast('Rien à mettre à jour pour ce bloc'); return; }
+  showToast(`⏳ Mise à jour de ${target.length} cartes (bloc ${bloc.nom})…`, 8000);
+  let ok=0;
+  const energies=await fetchTcgdexEnergieBatch(
+    target.map(c=>({tcgdexId:c.tcgdex_id})), 8,
+    (done,total)=>{ if(done%20===0 || done===total) console.log(`Backfill énergie : ${done}/${total}`); }
+  );
+  for(let i=0;i<target.length;i++){
+    const t=energies[i];
+    if(!t) continue;
+    try{
+      await sbPatch('cartes','?id=eq.'+encodeURIComponent(target[i].id), {energie:t});
+      target[i].energie=t;
+      ok++;
+    }catch(e){ console.warn('Échec maj', target[i].id, e); }
+  }
+  showToast(`✅ ${ok}/${target.length} cartes mises à jour (bloc ${bloc.nom})`);
+}
+window.backfillEnergieForBloc=backfillEnergieForBloc;
+
 async function importSelected(){
   const collId=document.getElementById('importCollId')?.value||'';
   if(!collId){ showToast('Choisis une collection'); return; }
@@ -5132,15 +5187,19 @@ async function importSelected(){
   try {
     // Trier par numéro avant insertion
     const sorted=[...toImport].sort((a,b)=>cardOrderNum(a.numero)-cardOrderNum(b.numero));
+    // Type d'énergie de chaque carte (utile pour le scan) : une requête TCGdex
+    // de plus par carte, faite une seule fois ici, jamais au moment du scan.
+    showToast(`⏳ Récupération des types (${sorted.length} cartes)…`, 8000);
+    const energies=await fetchTcgdexEnergieBatch(sorted);
     // Ordre calculé selon la position du numéro dans la collection (comme
     // pour l'ajout manuel), et non plus toujours après le maximum existant.
     // Avant ce correctif, importer une seule carte pour combler un manque
     // dans une collection déjà remplie la plaçait systématiquement tout à
     // la fin de la liste, peu importe son propre numéro.
     const workingCartes=[...cartes];
-    const batch=sorted.map(c=>{
+    const batch=sorted.map((c,i)=>{
       const ordre=computeOrder(collId, c.numero, workingCartes);
-      const row={collection_id:collId,nom:c.nom,numero:c.numero,image:c.imageHigh,ordre,tcgdex_id:c.tcgdexId||null};
+      const row={collection_id:collId,nom:c.nom,numero:c.numero,image:c.imageHigh,ordre,tcgdex_id:c.tcgdexId||null,energie:energies[i]||null};
       workingCartes.push(row); // pour que la carte suivante du lot en tienne compte
       return row;
     });
@@ -6265,7 +6324,7 @@ async function captureScan(){
     const numText=await runScanOCR(canvas, !!scanCollFilter); // lecture rapide du numéro
     let contextText='';
     try{ contextText=await runScanContextOCR(canvas); }catch(eCtx){ contextText=''; }
-    handleScanText(((numText||'')+' '+(contextText||'')).trim());
+    handleScanText(((numText||'')+' '+(contextText||'')).trim(), canvas);
   }catch(e){
     setScanStatus('❌ Lecture impossible, réessaie');
     document.getElementById('scanShutter').disabled=false;
@@ -6475,7 +6534,8 @@ function extractScanEnergies(rawText){
   return [...found];
 }
 
-function scanEnergyScore(card, energies){
+function scanEnergyScore(card, energies, weight){
+  weight = weight || 22;
   if(!energies || !energies.length || !card) return 0;
   const raw=JSON.stringify(card).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
   const aliases={
@@ -6493,9 +6553,68 @@ function scanEnergyScore(card, energies){
   };
   let score=0;
   energies.forEach(e=>{
-    if((aliases[e]||[e]).some(a=>raw.includes(a))) score=Math.max(score,22);
+    if((aliases[e]||[e]).some(a=>raw.includes(a))) score=Math.max(score,weight);
   });
   return score;
+}
+
+// ── Indice couleur (bordure de la carte photographiée) ────────────────
+// Bonus FAIBLE et seulement utilisé pour départager des cartes déjà
+// proches (nom/numéro) : les reverses/holos peuvent légèrement décaler
+// la teinte, donc on ignore toute zone terne/peu saturée plutôt que de
+// deviner à tort. Types gris (Métal/Obscurité/Incolore) volontairement
+// exclus : trop faciles à confondre entre eux et avec un reflet.
+const SCAN_TYPE_COLORS={
+  fire:[232,92,40], water:[66,143,210], grass:[79,158,69],
+  electric:[236,196,40], psychic:[172,97,165], fighting:[178,105,58],
+  fairy:[236,150,191]
+};
+function detectScanColorEnergie(canvas){
+  try{
+    if(!canvas || !canvas.getContext) return '';
+    const ctx=canvas.getContext('2d');
+    const w=canvas.width, h=canvas.height;
+    if(!w || !h) return '';
+    const bandW=Math.max(4,Math.round(w*0.035));
+    const bandH=Math.max(4,Math.round(h*0.035));
+    const patches=[
+      [0, h*0.15, bandW, h*0.25],
+      [0, h*0.60, bandW, h*0.25],
+      [w-bandW, h*0.15, bandW, h*0.25],
+      [w-bandW, h*0.60, bandW, h*0.25],
+      [w*0.15, 0, w*0.25, bandH],
+      [w*0.60, h-bandH, w*0.25, bandH],
+    ];
+    const hits=[];
+    patches.forEach(([x,y,pw,ph])=>{
+      x=Math.max(0,Math.round(x)); y=Math.max(0,Math.round(y));
+      pw=Math.max(1,Math.round(pw)); ph=Math.max(1,Math.round(ph));
+      if(x+pw>w || y+ph>h || pw<=0 || ph<=0) return;
+      let data;
+      try{ data=ctx.getImageData(x,y,pw,ph).data; }catch(e){ return; }
+      let r=0,g=0,b=0,n=0;
+      for(let i=0;i<data.length;i+=4){ r+=data[i]; g+=data[i+1]; b+=data[i+2]; n++; }
+      if(!n) return;
+      r/=n; g/=n; b/=n;
+      const mx=Math.max(r,g,b), mn=Math.min(r,g,b);
+      const sat=mx>0?(mx-mn)/mx:0;
+      if(sat<0.18) return;
+      let best=null, bestDist=Infinity;
+      for(const name in SCAN_TYPE_COLORS){
+        const c=SCAN_TYPE_COLORS[name];
+        const d=(r-c[0])*(r-c[0])+(g-c[1])*(g-c[1])+(b-c[2])*(b-c[2]);
+        if(d<bestDist){ bestDist=d; best=name; }
+      }
+      if(best) hits.push(best);
+    });
+    if(!hits.length) return '';
+    const counts={};
+    hits.forEach(h=>counts[h]=(counts[h]||0)+1);
+    const sortedCounts=Object.entries(counts).sort((a,b)=>b[1]-a[1]);
+    const [top,topCount]=sortedCounts[0];
+    if(topCount<Math.ceil(hits.length/2)) return '';
+    return top;
+  }catch(e){ return ''; }
 }
 
 // Chiffres facilement confondus par l'OCR (pour tolérer les erreurs de lecture)
@@ -6520,7 +6639,7 @@ function numProche(a,b){
   return diff<=1;
 }
 
-function handleScanText(rawText){
+function handleScanText(rawText, srcCanvas){
   const text=rawText.replace(/\s+/g,' ').trim();
   lastScanOcr=rawText||''; // mémoriser pour l'apprentissage à la confirmation
 
@@ -6569,6 +6688,10 @@ function handleScanText(rawText){
   const norm=s=>(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
   const nWords=words.map(norm);
   const scanEnergies=extractScanEnergies(rawText);
+  // Indice couleur : uniquement s'il n'y a rien lu à l'écrit, jamais en
+  // remplacement d'un vrai indice texte (plus rare mais plus sûr).
+  const scanColorEnergies=(!scanEnergies.length && srcCanvas)
+    ? [detectScanColorEnergie(srcCanvas)].filter(Boolean) : [];
 
   // Distance de Levenshtein (pour tolérer les fautes de lecture OCR sur le nom)
   function lev(a,b){
@@ -6625,7 +6748,7 @@ function handleScanText(rawText){
     }
 
     // 4) ÉNERGIE / TYPE — bonus de confirmation quand l'OCR lit un indice utile
-    const eScore=scanEnergyScore(c, scanEnergies);
+    const eScore=scanEnergyScore(c, scanEnergies) || scanEnergyScore(c, scanColorEnergies, 10);
     if(eScore) score+=eScore;
 
     // BONUS : nom + numéro qui concordent = quasi certain
