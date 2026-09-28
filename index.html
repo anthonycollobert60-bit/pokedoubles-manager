@@ -904,6 +904,7 @@ window.PokeCardsFCM = {
     </button>
   </div>
   <div id="modalPrice" class="modal-price na"></div>
+  <div id="modalImageAdmin"></div>
   <div id="modalOwnersArea"></div>
 </div>
 
@@ -2875,6 +2876,41 @@ document.getElementById('searchAll').addEventListener('input', applyFilters);
 document.getElementById('typeFilter').addEventListener('change', applyFilters);
 
 /* ══ MODAL ═════════════════════════════════════════════ */
+// Fenêtre de carte : Anthony peut renseigner ou corriger le lien de l'image
+// d'une carte DÉJÀ importée (ex. carte TCGdex sans image), sans la recréer :
+// elle garde son identifiant TCGdex, son type et ses quantités.
+function refreshModalImageAdmin(){
+  const box=document.getElementById('modalImageAdmin');
+  if(!box) return;
+  if(profileKey(currentUser)!=='anthony' || !currentCardId){ box.innerHTML=''; return; }
+  const card=cartes.find(c=>String(c.id)===String(currentCardId));
+  if(!card){ box.innerHTML=''; return; }
+  box.innerHTML=`<div class="share-box" style="margin-top:10px">
+    <b>🖼️ Lien de l'image</b>
+    <div class="form-row" style="margin-top:8px">
+      <input class="form-input" id="modalImgUrl" placeholder="https://…" value="${esc(card.image||'')}"/>
+      <button class="btn-sm" onclick="saveCardImage()">Enregistrer</button>
+    </div>
+  </div>`;
+}
+async function saveCardImage(){
+  if(profileKey(currentUser)!=='anthony'){ showToast('Réservé à Anthony'); return; }
+  const card=cartes.find(c=>String(c.id)===String(currentCardId));
+  if(!card) return;
+  const url=(document.getElementById('modalImgUrl')?.value||'').trim();
+  if(url && !/^https?:\/\//i.test(url)){ showToast('Le lien doit commencer par http:// ou https://'); return; }
+  try{
+    await sbPatch('cartes','?id=eq.'+encodeURIComponent(card.id),{image:url||null});
+    card.image=url||null;
+    const big=document.getElementById('modalImg'); if(big) big.src=optImg(card.image);
+    // Met aussi à jour la vignette dans la grille affichée derrière la fenêtre
+    document.querySelectorAll('.poke-card[data-id="'+card.id+'"] img').forEach(i=>{ i.src=optImg(card.image); });
+    saveToCache();
+    showToast(url?'✅ Image enregistrée':'🗑️ Image retirée');
+  }catch(e){ console.error(e); showToast('❌ Impossible d\'enregistrer : '+e.message); }
+}
+window.saveCardImage=saveCardImage;
+
 function openModal(carteId){
   currentCardId=carteId;
   fillModal(carteId);
@@ -2890,6 +2926,7 @@ function fillModal(carteId){
   document.getElementById('modalTitle').textContent=card.nom||'';
   document.getElementById('modalSub').textContent=card.numero||'';
   document.getElementById('modalImg').src=optImg(card.image);
+  refreshModalImageAdmin();
   renderModalQty(carteId);
   const modalPriceEl=document.getElementById('modalPrice');
   if(modalPriceEl){
