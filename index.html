@@ -5154,16 +5154,35 @@ async function syncCollectionDatesFromTcgdex(){
 // Va chercher le type d'énergie d'une carte auprès de TCGdex (endpoint détail,
 // pas fourni par la liste du set). Utilisé au moment de l'import : rien à
 // installer, juste une requête de plus par carte, faite une seule fois.
-async function fetchTcgdexEnergie(tcgdexId){
+async function fetchTcgdexEnergie(tcgdexId, attempt){
+  attempt = attempt || 0;
   if(!tcgdexId) return '';
   try{
-    const data=await fetch(`${TCGDEX}/cards/${tcgdexId}`).then(r=>r.json());
+    const res=await fetch(`${TCGDEX}/cards/${tcgdexId}`);
+    if(!res.ok){
+      // 429 = trop de requêtes envoyées d'un coup (API gratuite) : on retente
+      // après une petite pause plutôt que d'abandonner tout de suite.
+      if((res.status===429 || res.status>=500) && attempt<3){
+        await new Promise(r=>setTimeout(r, 500*(attempt+1)));
+        return fetchTcgdexEnergie(tcgdexId, attempt+1);
+      }
+      return '';
+    }
+    const data=await res.json();
     return Array.isArray(data?.types) ? data.types.join(',') : '';
-  }catch(e){ return ''; }
+  }catch(e){
+    if(attempt<2){
+      await new Promise(r=>setTimeout(r, 400*(attempt+1)));
+      return fetchTcgdexEnergie(tcgdexId, attempt+1);
+    }
+    return '';
+  }
 }
 // Récupère les types d'une liste de cartes avec un nombre de requêtes
-// simultanées limité (poli envers l'API gratuite, mais reste rapide).
-async function fetchTcgdexEnergieBatch(cardsList, concurrency=8, onProgress){
+// simultanées limité (poli envers l'API gratuite) et une petite pause
+// entre deux requêtes d'un même "ouvrier", pour éviter de déclencher une
+// limitation de débit qui ferait échouer la majorité des demandes.
+async function fetchTcgdexEnergieBatch(cardsList, concurrency=5, onProgress){
   const out=new Array(cardsList.length).fill('');
   let idx=0, done=0;
   async function worker(){
@@ -5171,6 +5190,7 @@ async function fetchTcgdexEnergieBatch(cardsList, concurrency=8, onProgress){
       const i=idx++;
       out[i]=await fetchTcgdexEnergie(cardsList[i].tcgdexId);
       done++; if(onProgress) onProgress(done, cardsList.length);
+      await new Promise(r=>setTimeout(r,80));
     }
   }
   await Promise.all(Array.from({length:Math.min(concurrency,cardsList.length)},worker));
