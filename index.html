@@ -5154,31 +5154,53 @@ async function syncCollectionDatesFromTcgdex(){
 // Va chercher le type d'énergie d'une carte auprès de TCGdex (endpoint détail,
 // pas fourni par la liste du set). Utilisé au moment de l'import : rien à
 // installer, juste une requête de plus par carte, faite une seule fois.
-async function fetchTcgdexEnergie(tcgdexId, attempt){
+// Types anglais de TCGdex -> libellés français (gardés cohérents en base).
+const TCGDEX_TYPE_FR={Grass:'Plante',Fire:'Feu',Water:'Eau',Lightning:'Électrique',Psychic:'Psy',Fighting:'Combat',Darkness:'Obscurité',Metal:'Métal',Fairy:'Fée',Dragon:'Dragon',Colorless:'Incolore'};
+// Une tentative sur une langue donnée. null = échec, '' = carte sans type.
+async function fetchTcgdexEnergieOnce(base, tcgdexId, attempt){
   attempt = attempt || 0;
-  if(!tcgdexId) return null;
   try{
-    const res=await fetch(`${TCGDEX}/cards/${tcgdexId}`);
+    const res=await fetch(`${base}/cards/${tcgdexId}`);
     if(!res.ok){
-      // 429 = trop de requêtes envoyées d'un coup (API gratuite) : on retente
-      // après une petite pause plutôt que d'abandonner tout de suite.
+      // 429 / 5xx = trop de requêtes ou serveur occupé : on retente après une pause.
       if((res.status===429 || res.status>=500) && attempt<3){
         await new Promise(r=>setTimeout(r, 500*(attempt+1)));
-        return fetchTcgdexEnergie(tcgdexId, attempt+1);
+        return fetchTcgdexEnergieOnce(base, tcgdexId, attempt+1);
       }
-      return null; // échec : à retenter plus tard
+      return null; // 404 etc. : la carte n'existe pas dans cette langue
     }
     const data=await res.json();
-    // '' = la carte existe mais n'a pas de type (Dresseur, Énergie…)
     return Array.isArray(data?.types) ? data.types.join(',') : '';
   }catch(e){
     if(attempt<2){
       await new Promise(r=>setTimeout(r, 400*(attempt+1)));
-      return fetchTcgdexEnergie(tcgdexId, attempt+1);
+      return fetchTcgdexEnergieOnce(base, tcgdexId, attempt+1);
     }
     return null;
   }
 }
+async function fetchTcgdexEnergie(tcgdexId){
+  if(!tcgdexId) return null;
+  let r=await fetchTcgdexEnergieOnce(TCGDEX, tcgdexId);
+  if(r===null){
+    // Certaines cartes (Galeries, Coffres Shiny, variantes de Célébrations) ne
+    // sont pas dans la base française de TCGdex : on tente la version anglaise.
+    const en=await fetchTcgdexEnergieOnce(TCGDEX.replace('/v2/fr','/v2/en'), tcgdexId);
+    if(en!==null) r=en.split(',').map(t=>TCGDEX_TYPE_FR[t.trim()]||t.trim()).filter(Boolean).join(',');
+  }
+  return r;
+}
+// Diagnostic à lancer depuis la console : diagTcgdex('swsh10-TG01')
+async function diagTcgdex(id){
+  for(const lang of ['fr','en']){
+    try{
+      const res=await fetch(`https://api.tcgdex.net/v2/${lang}/cards/${id}`);
+      const data=res.ok ? await res.json() : null;
+      console.log(lang.toUpperCase(), 'statut', res.status, data ? ('types : '+JSON.stringify(data.types)+' · nom : '+data.name) : '(pas de données)');
+    }catch(e){ console.log(lang.toUpperCase(), 'erreur', e.message); }
+  }
+}
+window.diagTcgdex=diagTcgdex;
 // Récupère les types d'une liste de cartes avec un nombre de requêtes
 // simultanées limité (poli envers l'API gratuite) et une petite pause
 // entre deux requêtes d'un même "ouvrier". Résultat : null = échec,
