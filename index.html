@@ -2544,7 +2544,7 @@ function saveToCache(){
   // puis un dernier nettoyage plutôt que d'échouer en silence.
   const compactCartes=(cartes||[]).map(c=>({
     id:c.id, nom:c.nom, numero:c.numero, image:c.image,
-    collection_id:c.collection_id, ordre:c.ordre, tcgdex_id:c.tcgdex_id
+    collection_id:c.collection_id, ordre:c.ordre, tcgdex_id:c.tcgdex_id, energie:c.energie
   }));
   const priceList=Object.entries(storedPrices||{}).map(([carte_id,p])=>({carte_id,price_eur:p.price_eur,price_reverse:p.price_reverse,updated_at:p.updated_at,is_manual:p.is_manual}));
   try{
@@ -5156,7 +5156,7 @@ async function syncCollectionDatesFromTcgdex(){
 // installer, juste une requête de plus par carte, faite une seule fois.
 async function fetchTcgdexEnergie(tcgdexId, attempt){
   attempt = attempt || 0;
-  if(!tcgdexId) return '';
+  if(!tcgdexId) return null;
   try{
     const res=await fetch(`${TCGDEX}/cards/${tcgdexId}`);
     if(!res.ok){
@@ -5166,24 +5166,25 @@ async function fetchTcgdexEnergie(tcgdexId, attempt){
         await new Promise(r=>setTimeout(r, 500*(attempt+1)));
         return fetchTcgdexEnergie(tcgdexId, attempt+1);
       }
-      return '';
+      return null; // échec : à retenter plus tard
     }
     const data=await res.json();
+    // '' = la carte existe mais n'a pas de type (Dresseur, Énergie…)
     return Array.isArray(data?.types) ? data.types.join(',') : '';
   }catch(e){
     if(attempt<2){
       await new Promise(r=>setTimeout(r, 400*(attempt+1)));
       return fetchTcgdexEnergie(tcgdexId, attempt+1);
     }
-    return '';
+    return null;
   }
 }
 // Récupère les types d'une liste de cartes avec un nombre de requêtes
 // simultanées limité (poli envers l'API gratuite) et une petite pause
-// entre deux requêtes d'un même "ouvrier", pour éviter de déclencher une
-// limitation de débit qui ferait échouer la majorité des demandes.
+// entre deux requêtes d'un même "ouvrier". Résultat : null = échec,
+// '' = carte sans type, sinon le type (ex. "Feu").
 async function fetchTcgdexEnergieBatch(cardsList, concurrency=5, onProgress){
-  const out=new Array(cardsList.length).fill('');
+  const out=new Array(cardsList.length).fill(null);
   let idx=0, done=0;
   async function worker(){
     while(idx<cardsList.length){
@@ -5197,34 +5198,76 @@ async function fetchTcgdexEnergieBatch(cardsList, concurrency=5, onProgress){
   return out;
 }
 
-// Remet à niveau les cartes DÉJÀ importées d'un bloc (types d'énergie
-// manquants) sans tout réimporter. Réservé à Anthony, à lancer une fois
-// depuis la console du navigateur : backfillEnergieForBloc('Méga Évolution')
+// Remet à niveau les cartes DÉJÀ importées (types d'énergie manquants) sans
+// tout réimporter. Réservé à Anthony, à lancer depuis la console :
+//   backfillEnergieForBloc('Méga Évolution')   → un seul bloc
+//   backfillEnergieAllBlocs()                  → tous les blocs, l'un après l'autre
+// Reprenable à tout moment : seules les cartes encore sans type sont traitées.
+// Les cartes sans type dans le jeu (Dresseur, Énergie) sont marquées "Aucun"
+// pour ne plus être retentées à chaque lancement.
+async function backfillEnergieCards(target, label){
+  let withType=0, noType=0, failed=0, done=0;
+  const SLICE=200; // on enregistre par tranches : une interruption ne perd presque rien
+  for(let start=0; start<target.length; start+=SLICE){
+    const slice=target.slice(start,start+SLICE);
+    const energies=await fetchTcgdexEnergieBatch(slice.map(c=>({tcgdexId:c.tcgdex_id})));
+    const groups={};
+    slice.forEach((c,i)=>{
+      const t=energies[i];
+      if(t===null){ failed++; return; }
+      const val=t||'Aucun';
+      (groups[val]=groups[val]||[]).push(c);
+    });
+    // Une seule requête par groupe de 50 cartes de même type (au lieu d'une par carte)
+    for(const val of Object.keys(groups)){
+      const list=groups[val];
+      for(let k=0;k<list.length;k+=50){
+        const part=list.slice(k,k+50);
+        try{
+          await sbPatch('cartes','?id=in.('+part.map(c=>encodeURIComponent(c.id)).join(',')+')',{energie:val});
+          part.forEach(c=>{ c.energie=val; });
+          if(val==='Aucun') noType+=part.length; else withType+=part.length;
+        }catch(e){ console.warn('Échec de mise à jour groupée',val,e); failed+=part.length; }
+      }
+    }
+    done+=slice.length;
+    console.log(`[${label}] ${done}/${target.length} — avec type : ${withType} · sans type (Dresseur…) : ${noType} · échecs : ${failed}`);
+  }
+  return {withType,noType,failed};
+}
+
 async function backfillEnergieForBloc(blocNom){
   if(profileKey(currentUser)!=='anthony'){ showToast('Réservé à Anthony'); return; }
+  if(currentGame!=='pokemon'){ showToast('Bascule sur Pokémon d\'abord'); return; }
   const bloc=blocs.find(b=>(b.nom||'').toLowerCase()===String(blocNom||'').toLowerCase());
   if(!bloc){ showToast('Bloc introuvable : '+blocNom); console.warn('Blocs disponibles :', blocs.map(b=>b.nom)); return; }
   const collIds=new Set(collections.filter(c=>c.bloc_id===bloc.id).map(c=>c.id));
   const target=cartes.filter(c=>collIds.has(c.collection_id) && c.tcgdex_id && !c.energie);
   if(!target.length){ showToast('Rien à mettre à jour pour ce bloc'); return; }
-  showToast(`⏳ Mise à jour de ${target.length} cartes (bloc ${bloc.nom})…`, 8000);
-  let ok=0;
-  const energies=await fetchTcgdexEnergieBatch(
-    target.map(c=>({tcgdexId:c.tcgdex_id})), 8,
-    (done,total)=>{ if(done%20===0 || done===total) console.log(`Backfill énergie : ${done}/${total}`); }
-  );
-  for(let i=0;i<target.length;i++){
-    const t=energies[i];
-    if(!t) continue;
-    try{
-      await sbPatch('cartes','?id=eq.'+encodeURIComponent(target[i].id), {energie:t});
-      target[i].energie=t;
-      ok++;
-    }catch(e){ console.warn('Échec maj', target[i].id, e); }
+  showToast(`⏳ ${target.length} cartes à traiter (bloc ${bloc.nom})…`, 8000);
+  const r=await backfillEnergieCards(target, bloc.nom);
+  showToast(`✅ ${bloc.nom} : ${r.withType} typées · ${r.noType} sans type · ${r.failed} échec(s)`);
+}
+async function backfillEnergieAllBlocs(){
+  if(profileKey(currentUser)!=='anthony'){ showToast('Réservé à Anthony'); return; }
+  if(currentGame!=='pokemon'){ showToast('Bascule sur Pokémon d\'abord'); return; }
+  const todo=cartes.filter(c=>c.tcgdex_id && !c.energie);
+  if(!todo.length){ showToast('Rien à mettre à jour : toutes les cartes ont déjà leur type'); return; }
+  showToast(`⏳ ${todo.length} cartes à traiter (tous blocs). Garde cet onglet ouvert.`, 10000);
+  const total={withType:0,noType:0,failed:0};
+  for(const bloc of blocs){
+    const collIds=new Set(collections.filter(c=>c.bloc_id===bloc.id).map(c=>c.id));
+    const target=todo.filter(c=>collIds.has(c.collection_id));
+    if(!target.length) continue;
+    console.log(`▶ Bloc « ${bloc.nom} » : ${target.length} cartes`);
+    const r=await backfillEnergieCards(target, bloc.nom);
+    total.withType+=r.withType; total.noType+=r.noType; total.failed+=r.failed;
   }
-  showToast(`✅ ${ok}/${target.length} cartes mises à jour (bloc ${bloc.nom})`);
+  console.log('Terminé :', total);
+  showToast(`✅ Terminé : ${total.withType} typées · ${total.noType} sans type · ${total.failed} échec(s)`, 8000);
 }
 window.backfillEnergieForBloc=backfillEnergieForBloc;
+window.backfillEnergieAllBlocs=backfillEnergieAllBlocs;
 
 async function importSelected(){
   const collId=document.getElementById('importCollId')?.value||'';
@@ -5247,7 +5290,7 @@ async function importSelected(){
     const workingCartes=[...cartes];
     const batch=sorted.map((c,i)=>{
       const ordre=computeOrder(collId, c.numero, workingCartes);
-      const row={collection_id:collId,nom:c.nom,numero:c.numero,image:c.imageHigh,ordre,tcgdex_id:c.tcgdexId||null,energie:energies[i]||null};
+      const row={collection_id:collId,nom:c.nom,numero:c.numero,image:c.imageHigh,ordre,tcgdex_id:c.tcgdexId||null,energie:(energies[i]===null?null:(energies[i]||'Aucun'))};
       workingCartes.push(row); // pour que la carte suivante du lot en tienne compte
       return row;
     });
@@ -6595,7 +6638,10 @@ function extractScanEnergies(rawText){
 function scanEnergyScore(card, energies, weight){
   weight = weight || 22;
   if(!energies || !energies.length || !card) return 0;
-  const raw=JSON.stringify(card).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  // Type stocké en base : on ne compare QU'à lui (avant, tout le JSON de la
+  // carte était fouillé, d'où des faux positifs comme "Darkrai" pris pour Obscurité).
+  const src=card.energie ? String(card.energie) : JSON.stringify(card);
+  const raw=src.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
   const aliases={
     electric:['electric','electrique','lightning'],
     fire:['fire','feu'],
