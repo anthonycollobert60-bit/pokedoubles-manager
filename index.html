@@ -6370,8 +6370,17 @@ async function captureScan(){
   // 3) Analyser l'image figée (la caméra peut être bougée pendant ce temps)
   try{
     const numText=await runScanOCR(canvas, !!scanCollFilter); // lecture rapide du numéro
+    // Numéro complet "xxx/yyy" déjà lu avec certitude ? Dans une collection
+    // présélectionnée, ça suffit à lui seul à identifier la carte : l'OCR
+    // complémentaire (nom, PV, énergie) n'ajouterait rien mais coûte à lui
+    // seul plusieurs secondes (3 passes de plus). On ne le lance que si
+    // le numéro est absent/douteux, ou si aucune collection n'est fixée.
+    const mFull=(numText||'').match(/(\d{1,3})\s*\/\s*(\d{1,3})/);
+    const numLooksComplete=!!(mFull && parseInt(mFull[1])>0 && parseInt(mFull[2])>0);
     let contextText='';
-    try{ contextText=await runScanContextOCR(canvas); }catch(eCtx){ contextText=''; }
+    if(!(scanCollFilter && numLooksComplete)){
+      try{ contextText=await runScanContextOCR(canvas); }catch(eCtx){ contextText=''; }
+    }
     handleScanText(((numText||'')+' '+(contextText||'')).trim(), canvas);
   }catch(e){
     setScanStatus('❌ Lecture impossible, réessaie');
@@ -6542,7 +6551,8 @@ async function runScanContextOCR(srcCanvas){
       ctx.putImageData(img,0,0);
     }catch(e){}
     try{
-      const {data}=await Tesseract.recognize(c,'eng',{ logger:()=>{} });
+      const w=await getOcrWorker();
+      const {data}=await w.recognize(c);
       return data.text||'';
     }catch(e){ return ''; }
   }
