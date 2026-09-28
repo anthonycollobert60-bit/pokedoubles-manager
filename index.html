@@ -1024,6 +1024,10 @@ function gameChipHtml(g,size){
     : (g?g.emoji:'');
 }
 let currentGame = localStorage.getItem('pokecards_active_game') || 'pokemon';
+// Nettoyage ponctuel de l'ancienne clé de cache (avant la séparation par
+// jeu) : livrée à elle-même, elle n'est plus jamais relue et finissait par
+// remplir le quota de stockage à elle seule (plusieurs Mo pour rien).
+try{ localStorage.removeItem('pokecards_fast_cache_v2'); }catch(e){}
 // Recolore l'interface aux couleurs du jeu actif (voir la règle CSS
 // [data-game-theme="gentlemates"] ci-dessus). Pokémon garde le thème par
 // défaut : aucune règle CSS ne cible data-game-theme="pokemon".
@@ -2535,13 +2539,37 @@ function loadFromCache(){
 }
 
 function saveToCache(){
+  // Version allégée des cartes (comme l'app Collection) : moins de risque
+  // de dépasser le quota de stockage, et on tente un repli sans les cartes
+  // puis un dernier nettoyage plutôt que d'échouer en silence.
+  const compactCartes=(cartes||[]).map(c=>({
+    id:c.id, nom:c.nom, numero:c.numero, image:c.image,
+    collection_id:c.collection_id, ordre:c.ordre, tcgdex_id:c.tcgdex_id
+  }));
+  const priceList=Object.entries(storedPrices||{}).map(([carte_id,p])=>({carte_id,price_eur:p.price_eur,price_reverse:p.price_reverse,updated_at:p.updated_at,is_manual:p.is_manual}));
   try{
     localStorage.setItem(fastCacheKeyForGame(currentGame), JSON.stringify({
-      t:Date.now(),
-      blocs,collections,cartes,quantites,
-      prices:Object.entries(storedPrices||{}).map(([carte_id,p])=>({carte_id,price_eur:p.price_eur,price_reverse:p.price_reverse,updated_at:p.updated_at,is_manual:p.is_manual}))
+      t:Date.now(), blocs,collections,cartes:compactCartes,quantites,prices:priceList
     }));
-  }catch(e){}
+  }catch(e){
+    console.warn('Sauvegarde du cache local (complet) impossible, tentative sans les cartes :',e);
+    try{
+      localStorage.setItem(fastCacheKeyForGame(currentGame), JSON.stringify({
+        t:Date.now(), blocs,collections,cartes:[],quantites,prices:priceList
+      }));
+    }catch(e2){
+      console.warn('Sauvegarde du cache local impossible même sans les cartes :',e2);
+      try{
+        AVAILABLE_GAMES.forEach(g=>localStorage.removeItem(fastCacheKeyForGame(g.id)));
+        localStorage.removeItem('pokecards_main_catalog_v12_light');
+        localStorage.setItem(fastCacheKeyForGame(currentGame), JSON.stringify({
+          t:Date.now(), blocs,collections,cartes:[],quantites,prices:priceList
+        }));
+      }catch(e3){
+        console.warn('Cache local indisponible même après nettoyage :',e3);
+      }
+    }
+  }
 }
 
 async function loadData(){
