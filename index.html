@@ -2891,8 +2891,95 @@ function refreshModalImageAdmin(){
       <input class="form-input" id="modalImgUrl" placeholder="https://…" value="${esc(card.image||'')}"/>
       <button class="btn-sm" onclick="saveCardImage()">Enregistrer</button>
     </div>
+    ${card.tcgdex_id ? `<div style="margin-top:8px"><button class="btn-sm" onclick="findImageForCurrentCard()">🔎 Chercher l'image sur TCGdex</button></div>` : ''}
   </div>`;
 }
+// Teste si une image se charge vraiment (l'adresse peut exister en base sans
+// que le fichier existe chez TCGdex : c'est le cas de certaines séries).
+function testImageLoads(url, timeoutMs){
+  return new Promise(resolve=>{
+    if(!url) return resolve(false);
+    const img=new Image();
+    let done=false;
+    const finish=ok=>{ if(!done){ done=true; resolve(ok); } };
+    img.onload=()=>finish(true);
+    img.onerror=()=>finish(false);
+    setTimeout(()=>finish(false), timeoutMs||8000);
+    img.src=url;
+  });
+}
+// Cherche une adresse d'image qui fonctionne pour une carte TCGdex : d'abord
+// via l'API (français puis anglais), puis en essayant la version anglaise de
+// l'adresse actuelle. Renvoie l'adresse ou null.
+async function findWorkingTcgdexImage(card){
+  const candidates=[];
+  if(card.tcgdex_id){
+    for(const lang of ['fr','en']){
+      try{
+        const res=await fetch(`https://api.tcgdex.net/v2/${lang}/cards/${encodeURIComponent(card.tcgdex_id)}`);
+        if(res.ok){
+          const d=await res.json();
+          if(d && d.image){ candidates.push(d.image+'/high.webp'); candidates.push(d.image+'/high.png'); }
+        }
+      }catch(e){}
+    }
+  }
+  if(card.image && /assets\.tcgdex\.net\/fr\//.test(card.image)) candidates.push(card.image.replace('/fr/','/en/'));
+  for(const url of [...new Set(candidates)]){
+    if(await testImageLoads(url)) return url;
+  }
+  return null;
+}
+// Bouton de la fenêtre de carte : propose l'image trouvée (à enregistrer ensuite)
+async function findImageForCurrentCard(){
+  const card=cartes.find(c=>String(c.id)===String(currentCardId));
+  if(!card) return;
+  showToast('🔎 Recherche sur TCGdex…');
+  const url=await findWorkingTcgdexImage(card);
+  if(!url){ showToast('Aucune image trouvée chez TCGdex : colle un lien à la main'); return; }
+  const input=document.getElementById('modalImgUrl'); if(input) input.value=url;
+  const big=document.getElementById('modalImg'); if(big) big.src=optImg(url);
+  showToast('✅ Image trouvée : clique sur Enregistrer');
+}
+window.findImageForCurrentCard=findImageForCurrentCard;
+// Répare en une fois toutes les cartes d'un bloc dont l'image ne se charge pas.
+// À lancer depuis la console : repairTcgdexImagesForBloc("McDonald's")
+async function repairTcgdexImagesForBloc(blocNom){
+  if(profileKey(currentUser)!=='anthony'){ showToast('Réservé à Anthony'); return; }
+  const bloc=blocs.find(b=>(b.nom||'').toLowerCase()===String(blocNom||'').toLowerCase());
+  if(!bloc){ showToast('Bloc introuvable : '+blocNom); console.warn('Blocs disponibles :', blocs.map(b=>b.nom)); return; }
+  const collById=new Map(collections.filter(c=>c.bloc_id===bloc.id).map(c=>[c.id,c]));
+  const target=cartes.filter(c=>collById.has(c.collection_id));
+  showToast(`⏳ Vérification de ${target.length} images (bloc ${bloc.nom})…`, 8000);
+  let ok=0, fixed=0, done=0; const missing=[];
+  let idx=0;
+  async function worker(){
+    while(idx<target.length){
+      const c=target[idx++];
+      try{
+        if(c.image && await testImageLoads(c.image, 6000)){ ok++; }
+        else{
+          const url=await findWorkingTcgdexImage(c);
+          if(url){
+            await sbPatch('cartes','?id=eq.'+encodeURIComponent(c.id),{image:url});
+            c.image=url; fixed++;
+          } else missing.push(c);
+        }
+      }catch(e){ missing.push(c); }
+      done++;
+      if(done%20===0 || done===target.length) console.log(`[${bloc.nom}] ${done}/${target.length} — déjà bonnes : ${ok} · réparées : ${fixed} · introuvables : ${missing.length}`);
+    }
+  }
+  await Promise.all(Array.from({length:Math.min(4,target.length)},worker));
+  saveToCache();
+  if(missing.length){
+    console.log('Cartes sans image trouvable (à renseigner à la main dans la fenêtre de la carte) :');
+    console.table(missing.map(c=>({serie:(collById.get(c.collection_id)||{}).nom, numero:c.numero, nom:c.nom})));
+  }
+  showToast(`✅ ${bloc.nom} : ${fixed} réparées · ${ok} déjà bonnes · ${missing.length} introuvables`, 8000);
+}
+window.repairTcgdexImagesForBloc=repairTcgdexImagesForBloc;
+
 async function saveCardImage(){
   if(profileKey(currentUser)!=='anthony'){ showToast('Réservé à Anthony'); return; }
   const card=cartes.find(c=>String(c.id)===String(currentCardId));
