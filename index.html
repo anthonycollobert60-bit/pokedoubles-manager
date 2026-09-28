@@ -4921,6 +4921,23 @@ function renderAdmin(){
       <input class="form-input" id="manualNom" placeholder="Nom de la carte"/>
       <input class="form-input" id="manualNum" placeholder="Numéro (ex: 001/198)" style="max-width:140px;"/>
     </div>
+    ${currentGame==='pokemon' ? `<div class="form-row">
+      <select class="form-input" id="manualType">
+        <option value="">Type (facultatif)</option>
+        <option value="Feu">Feu</option>
+        <option value="Eau">Eau</option>
+        <option value="Plante">Plante</option>
+        <option value="Électrique">Électrique</option>
+        <option value="Psy">Psy</option>
+        <option value="Combat">Combat</option>
+        <option value="Obscurité">Obscurité</option>
+        <option value="Métal">Métal</option>
+        <option value="Fée">Fée</option>
+        <option value="Dragon">Dragon</option>
+        <option value="Incolore">Incolore</option>
+        <option value="Aucun">Aucun (Dresseur / Énergie)</option>
+      </select>
+    </div>` : ''}
     <div class="form-row">
       <input class="form-input" id="manualImg" placeholder="URL de l'image"/>
       <button class="btn-sm" onclick="addCarteManual()">Ajouter</button>
@@ -5312,7 +5329,7 @@ async function importSelected(){
     const workingCartes=[...cartes];
     const batch=sorted.map((c,i)=>{
       const ordre=computeOrder(collId, c.numero, workingCartes);
-      const row={collection_id:collId,nom:c.nom,numero:c.numero,image:c.imageHigh,ordre,tcgdex_id:c.tcgdexId||null,energie:(energies[i]===null?null:(energies[i]||'Aucun'))};
+      const row={collection_id:collId,nom:c.nom,numero:c.numero,image:c.imageHigh,ordre,tcgdex_id:c.tcgdexId||null,game_id:currentGame,energie:(energies[i]===null?null:(energies[i]||'Aucun'))};
       workingCartes.push(row); // pour que la carte suivante du lot en tienne compte
       return row;
     });
@@ -5392,7 +5409,7 @@ async function addBloc(){
   if(!nom){ showToast('Entre un nom'); return; }
   try {
     const currentMax=blocs.length>0 ? Math.max(...blocs.map(b=>b.ordre??0)) : -1;
-    const res=await sbPost('blocs',{nom,ordre:currentMax+1});
+    const res=await sbPost('blocs',{nom,ordre:currentMax+1,game_id:currentGame});
     blocs=[...blocs,...res].sort(blocChronoCompare);
     document.getElementById('newBlocNom').value='';
     saveToCache();
@@ -5413,7 +5430,7 @@ async function addCollection(){
     // Ordre = max des collections du même bloc + 1 si aucune date TCGdex n'est encore connue
     const blocColls=collections.filter(c=>c.bloc_id===blocId);
     const maxOrdre=blocColls.length>0?Math.max(...blocColls.map(c=>c.ordre??0)):0;
-    const res=await sbPost('collections',{bloc_id:blocId,nom,has_pokeball:hasP,has_masterball:hasM,ordre:maxOrdre+1});
+    const res=await sbPost('collections',{bloc_id:blocId,nom,has_pokeball:hasP,has_masterball:hasM,ordre:maxOrdre+1,game_id:currentGame});
     collections=[...collections,...res];
     const added=res && res[0] ? res[0] : null;
     document.getElementById('newCollNom').value='';
@@ -5442,14 +5459,18 @@ async function addCarteManual(){
   const nom=document.getElementById('manualNom').value.trim();
   const numero=document.getElementById('manualNum').value.trim();
   const image=document.getElementById('manualImg').value.trim();
+  const energie=document.getElementById('manualType')?.value||'';
   if(!collId||!nom){ showToast('Collection et nom requis'); return; }
   try {
     const ordre=computeOrder(collId, numero);
-    const res=await sbPost('cartes',{collection_id:collId,nom,numero,image,ordre});
+    const row={collection_id:collId,nom,numero,image,ordre,game_id:currentGame};
+    if(energie) row.energie=energie;
+    const res=await sbPost('cartes',row);
     cartes=[...cartes,...res].sort((a,b)=>(a.ordre??9999)-(b.ordre??9999));
     document.getElementById('manualNom').value='';
     document.getElementById('manualNum').value='';
     document.getElementById('manualImg').value='';
+    const typeSel=document.getElementById('manualType'); if(typeSel) typeSel.value='';
     showToast('✅ Carte ajoutée');
     stockDirty=true;
     // Rafraîchir aussi la liste déroulante de suppression si elle affiche
