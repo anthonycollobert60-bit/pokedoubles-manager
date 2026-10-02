@@ -1582,19 +1582,22 @@ function enhanceFilterDropdown(selectId){
     const panel=document.createElement('div');
     panel.className='custom-dd-panel';
     wrap.appendChild(panel);
-    btn.onclick=(e)=>{
+    // addEventListener plutôt que btn.onclick= : plus robuste si un autre
+    // bout de code du site pose aussi un gestionnaire sur ce bouton.
+    btn.addEventListener('click',function(e){
+      e.preventDefault();
       e.stopPropagation();
       const willOpen=!panel.classList.contains('open');
-      document.querySelectorAll('.custom-dd-panel.open').forEach(p=>p.classList.remove('open'));
-      document.querySelectorAll('.custom-dd-btn.open').forEach(b=>b.classList.remove('open'));
+      document.querySelectorAll('.custom-dd-panel.open').forEach(function(p){ p.classList.remove('open'); });
+      document.querySelectorAll('.custom-dd-btn.open').forEach(function(b){ b.classList.remove('open'); });
       if(willOpen){ panel.classList.add('open'); btn.classList.add('open'); }
-    };
+    }, false);
     if(!window.__ddOutsideClickBound){
       window.__ddOutsideClickBound=true;
-      document.addEventListener('click',()=>{
-        document.querySelectorAll('.custom-dd-panel.open').forEach(p=>p.classList.remove('open'));
-        document.querySelectorAll('.custom-dd-btn.open').forEach(b=>b.classList.remove('open'));
-      });
+      document.addEventListener('click',function(){
+        document.querySelectorAll('.custom-dd-panel.open').forEach(function(p){ p.classList.remove('open'); });
+        document.querySelectorAll('.custom-dd-btn.open').forEach(function(b){ b.classList.remove('open'); });
+      }, false);
     }
   }
   const btn=wrap.querySelector('.custom-dd-btn');
@@ -1604,17 +1607,28 @@ function enhanceFilterDropdown(selectId){
   const current=opts.find(o=>o.value===select.value)||opts[0];
   if(btn) btn.textContent=current?current.textContent:'';
   panel.querySelectorAll('.custom-dd-item').forEach(item=>{
-    item.onclick=(e)=>{
+    item.addEventListener('click',function(e){
+      e.preventDefault();
       e.stopPropagation();
       select.value=item.dataset.v;
       select.dispatchEvent(new Event('change'));
       btn.textContent=item.textContent;
-      panel.querySelectorAll('.custom-dd-item').forEach(i=>i.classList.toggle('active', i===item));
+      panel.querySelectorAll('.custom-dd-item').forEach(function(i){ i.classList.toggle('active', i===item); });
       panel.classList.remove('open'); btn.classList.remove('open');
-    };
+    }, false);
   });
 }
 window.enhanceFilterDropdown=enhanceFilterDropdown;
+// Diagnostic à lancer depuis la console 🛠️ si le menu ne s'ouvre pas :
+window.ddDebug=function(){
+  const w=document.querySelector('.custom-dd-wrap');
+  if(!w){ console.log('Aucun menu personnalisé trouvé sur cette page.'); return; }
+  const btn=w.querySelector('.custom-dd-btn');
+  const panel=w.querySelector('.custom-dd-panel');
+  console.log('bouton trouvé :', !!btn, '| texte :', btn&&btn.textContent);
+  console.log('panel trouvé :', !!panel, '| classes :', panel&&panel.className, '| nb options :', panel?panel.children.length:0);
+  if(btn){ btn.click(); console.log('--- après clic simulé ---'); console.log('panel classes :', panel.className); }
+};
 
 function toggleTheme(){ const h=document.documentElement; h.dataset.theme=h.dataset.theme==='dark'?'light':'dark'; localStorage.setItem('theme',h.dataset.theme); }
 (function(){ const s=localStorage.getItem('theme'); if(s) document.documentElement.dataset.theme=s; })();
