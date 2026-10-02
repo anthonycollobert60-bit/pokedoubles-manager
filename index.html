@@ -1064,6 +1064,10 @@ async function switchGame(gameId){
   applyGameTheme();
   blocs=[]; collections=[]; cartes=[];
   currentBlocId=null; currentCollId=null; currentCardId=null;
+  // Le panier et les filtres de l'onglet Vente sont propres à un jeu : un
+  // filtre de rareté choisi sur Pokémon (ex. "rarete:illustration rare")
+  // ne correspond à rien sur Gentle Mates et viderait la liste à tort.
+  venteCart={}; venteSearch=''; venteSort='price_desc'; venteRarFilter='all';
   const label=(AVAILABLE_GAMES.find(g=>g.id===gameId)||{}).label||gameId;
   showToast('🔄 Chargement de '+label+'…');
   try{ await loadData(); }catch(e){ console.warn('Changement de jeu',e); }
@@ -5950,7 +5954,12 @@ function renderVente(){
       const secret = cardExceedsSet(x.card) || cardIsSpecial(x.card);
       if(venteRarFilter==='secret') return secret;        // uniquement secrètes/spéciales
       if(secret) return false;                            // une secrète n'apparaît pas dans c/r/p/m
-      return x.rarete===venteRarFilter;                   // rareté exacte
+      if(venteRarFilter.indexOf('rarete:')===0){
+        // Rareté officielle (ex. "Illustration rare") : uniquement les
+        // exemplaires normaux de cette rareté précise, pas les reverses.
+        return x.rarete==='c' && (x.card.rarete_tcgdex||'').toLowerCase()===venteRarFilter.slice(7);
+      }
+      return x.rarete===venteRarFilter;                   // rareté exacte (ancien système c/r/p/m)
     });
   }
 
@@ -6014,12 +6023,7 @@ function renderVente(){
         <span style="font-size:12px;font-weight:700;color:var(--text2);flex-shrink:0;">Rareté :</span>
         <select id="venteRarSelect" onchange="venteOnRarFilter(this.value)"
           style="flex:1;padding:9px 12px;border-radius:10px;border:1.5px solid var(--border);background:var(--bg);color:var(--text);font-size:13px;font-weight:600;">
-          <option value="all"${venteRarFilter==='all'?' selected':''}>Toutes les raretés</option>
-          <option value="c"${venteRarFilter==='c'?' selected':''}>Commune</option>
-          <option value="r"${venteRarFilter==='r'?' selected':''}>Reverse</option>
-          <option value="p"${venteRarFilter==='p'?' selected':''}>Pokéball</option>
-          <option value="m"${venteRarFilter==='m'?' selected':''}>Masterball</option>
-          <option value="secret"${venteRarFilter==='secret'?' selected':''}>Secrète / Spéciale</option>
+          ${venteRarOptionsHtml(venteCards())}
         </select>
       </div>
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
@@ -6040,6 +6044,7 @@ function renderVente(){
     </div>
     ${renderVenteCartBar()}`;
   if(currentUser==='anthony') loadVenteDemandes(false);
+  enhanceFilterDropdown('venteRarSelect');
 }
 
 function venteOnSearch(v){
@@ -6052,6 +6057,36 @@ function venteOnSearch(v){
 function venteOnSort(v){
   venteSort=v;
   renderVente();
+}
+
+function venteRarOptionsHtml(list){
+  const officielles=[...new Set(
+    list.filter(x=>x.rarete==='c' && x.card.rarete_tcgdex).map(x=>x.card.rarete_tcgdex)
+  )].sort((a,b)=>{
+    const ia=RARETE_OFFICIELLE_ORDRE.indexOf(a.toLowerCase());
+    const ib=RARETE_OFFICIELLE_ORDRE.indexOf(b.toLowerCase());
+    if(ia===-1 && ib===-1) return a.localeCompare(b,'fr');
+    if(ia===-1) return 1;
+    if(ib===-1) return -1;
+    return ia-ib;
+  });
+  const hasPlainC=list.some(x=>x.rarete==='c' && !x.card.rarete_tcgdex && !cardExceedsSet(x.card) && !cardIsSpecial(x.card));
+  const hasR=list.some(x=>x.rarete==='r');
+  const hasP=list.some(x=>x.rarete==='p');
+  const hasM=list.some(x=>x.rarete==='m');
+  const hasSecret=list.some(x=>cardExceedsSet(x.card)||cardIsSpecial(x.card));
+  let html='<option value="all">Toutes les raretés</option>';
+  officielles.forEach(r=>{
+    const info=rareteBadgeInfo(r);
+    const label=(info?info.symbol+' ':'')+r;
+    html+=`<option value="rarete:${esc(r.toLowerCase())}"${venteRarFilter==='rarete:'+r.toLowerCase()?' selected':''}>${esc(label)}</option>`;
+  });
+  if(hasPlainC) html+=`<option value="c"${venteRarFilter==='c'?' selected':''}>Commune</option>`;
+  if(hasR) html+=`<option value="r"${venteRarFilter==='r'?' selected':''}>Reverse</option>`;
+  if(hasP) html+=`<option value="p"${venteRarFilter==='p'?' selected':''}>Pokéball</option>`;
+  if(hasM) html+=`<option value="m"${venteRarFilter==='m'?' selected':''}>Masterball</option>`;
+  if(hasSecret) html+=`<option value="secret"${venteRarFilter==='secret'?' selected':''}>Secrète / Spéciale</option>`;
+  return html;
 }
 
 function venteOnRarFilter(v){
