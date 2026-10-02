@@ -1086,6 +1086,23 @@ window.switchGame=switchGame;
 window.openGameSwitcher=openGameSwitcher;
 window.gameChipHtml=gameChipHtml;
 const TYPE_LABELS = { c:'Commune', r:'Reverse', p:'Pokéball', m:'Masterball' };
+function rareteBadgeInfo(rareteTcgdex){
+  const n=String(rareteTcgdex||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  if(n.includes('illustration') && (n.includes('special')||n.includes('speciale')))
+    return {symbol:'★★', bg:'#c9a227', fg:'#2b2b2b'};
+  if(n.includes('hyper')) return {symbol:'★★★', bg:'#c9a227', fg:'#2b2b2b'};
+  if(n.includes('chromatique') && n.includes('ultra')) return {symbol:'☆☆', bg:'#c9a227', fg:'#2b2b2b'};
+  if(n.includes('chromatique')) return {symbol:'☆', bg:'#c9a227', fg:'#2b2b2b'};
+  if(n.includes('high') && n.includes('tech')) return {symbol:'★', bg:'#e0218a', fg:'#fff'};
+  if(n.includes('noir') && n.includes('blanc')) return {symbol:'★☆', bg:'#2b2b2b', fg:'#fff'};
+  if(n.includes('illustration')) return {symbol:'★', bg:'#c9a227', fg:'#2b2b2b'};
+  if(n.includes('double') && n.includes('rare')) return {symbol:'★★', bg:'#2b2b2b', fg:'#fff'};
+  if(n.includes('ultra')) return {symbol:'★★', bg:'#9ca3af', fg:'#2b2b2b'};
+  if(n.includes('peu') && n.includes('commune')) return {symbol:'◆', bg:'#4b5563', fg:'#fff'};
+  if(n.includes('commune')) return {symbol:'●', bg:'#6b7280', fg:'#fff'};
+  if(n==='rare') return {symbol:'★', bg:'#2b2b2b', fg:'#fff'};
+  return null; // rareté pré-Écarlate/Violet ou inconnue : on garde l'ancien badge à lettre
+}
 function rareteDisplayLabel(card, t){
   if(t==='c' && card && card.rarete_tcgdex && card.rarete_tcgdex!=='Inconnue') return card.rarete_tcgdex;
   return TYPE_LABELS[t] || String(t).toUpperCase();
@@ -3256,7 +3273,7 @@ function renderModalQty(carteId){
       row.className='qty-row';
       row.id=`qrow-${carteId}-${currentUser}-${t}`;
       row.innerHTML=`
-        <span class="qty-label"><span class="badge badge-${t}" style="margin-right:4px;">${t.toUpperCase()}</span>${rareteDisplayLabel(carteForLabel,t)}</span>
+        <span class="qty-label"><span class="badge badge-${t}" style="margin-right:4px;${(t==='c'&&rareteBadgeInfo(carteForLabel&&carteForLabel.rarete_tcgdex))?`background:${rareteBadgeInfo(carteForLabel.rarete_tcgdex).bg};color:${rareteBadgeInfo(carteForLabel.rarete_tcgdex).fg};`:''}">${(t==='c'&&rareteBadgeInfo(carteForLabel&&carteForLabel.rarete_tcgdex))?rareteBadgeInfo(carteForLabel.rarete_tcgdex).symbol:t.toUpperCase()}</span>${rareteDisplayLabel(carteForLabel,t)}</span>
         <div class="qty-controls">
           <button class="qty-btn" onclick="changeQty('${carteId}','${currentUser}','${t}',-1)">−</button>
           <span class="qty-val" id="qv-${carteId}-${currentUser}-${t}">${val}</span>
