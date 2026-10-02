@@ -2545,7 +2545,7 @@ function saveToCache(){
   // puis un dernier nettoyage plutôt que d'échouer en silence.
   const compactCartes=(cartes||[]).map(c=>({
     id:c.id, nom:c.nom, numero:c.numero, image:c.image,
-    collection_id:c.collection_id, ordre:c.ordre, tcgdex_id:c.tcgdex_id, energie:c.energie
+    collection_id:c.collection_id, ordre:c.ordre, tcgdex_id:c.tcgdex_id, energie:c.energie, rarete_tcgdex:c.rarete_tcgdex, a_reverse:c.a_reverse
   }));
   const priceList=Object.entries(storedPrices||{}).map(([carte_id,p])=>({carte_id,price_eur:p.price_eur,price_reverse:p.price_reverse,updated_at:p.updated_at,is_manual:p.is_manual}));
   try{
@@ -5297,8 +5297,9 @@ async function syncCollectionDatesFromTcgdex(){
 // installer, juste une requête de plus par carte, faite une seule fois.
 // Types anglais de TCGdex -> libellés français (gardés cohérents en base).
 const TCGDEX_TYPE_FR={Grass:'Plante',Fire:'Feu',Water:'Eau',Lightning:'Électrique',Psychic:'Psy',Fighting:'Combat',Darkness:'Obscurité',Metal:'Métal',Fairy:'Fée',Dragon:'Dragon',Colorless:'Incolore'};
-// Une tentative sur une langue donnée. null = échec, '' = carte sans type.
-async function fetchTcgdexEnergieOnce(base, tcgdexId, attempt){
+// Une tentative sur une langue donnée. Renvoie null (échec), ou un objet
+// {energie, rarete, aReverse} -- energie/rarete valent '' si la carte n'en a pas.
+async function fetchTcgdexCardInfoOnce(base, tcgdexId, attempt){
   attempt = attempt || 0;
   try{
     const res=await fetch(`${base}/cards/${tcgdexId}`);
@@ -5306,28 +5307,38 @@ async function fetchTcgdexEnergieOnce(base, tcgdexId, attempt){
       // 429 / 5xx = trop de requêtes ou serveur occupé : on retente après une pause.
       if((res.status===429 || res.status>=500) && attempt<3){
         await new Promise(r=>setTimeout(r, 500*(attempt+1)));
-        return fetchTcgdexEnergieOnce(base, tcgdexId, attempt+1);
+        return fetchTcgdexCardInfoOnce(base, tcgdexId, attempt+1);
       }
       return null; // 404 etc. : la carte n'existe pas dans cette langue
     }
     const data=await res.json();
-    return Array.isArray(data?.types) ? data.types.join(',') : '';
+    return {
+      energie: Array.isArray(data?.types) ? data.types.join(',') : '',
+      rarete: data?.rarity || '',
+      aReverse: !!(data?.variants && data.variants.reverse)
+    };
   }catch(e){
     if(attempt<2){
       await new Promise(r=>setTimeout(r, 400*(attempt+1)));
-      return fetchTcgdexEnergieOnce(base, tcgdexId, attempt+1);
+      return fetchTcgdexCardInfoOnce(base, tcgdexId, attempt+1);
     }
     return null;
   }
 }
-async function fetchTcgdexEnergie(tcgdexId){
+async function fetchTcgdexCardInfo(tcgdexId){
   if(!tcgdexId) return null;
-  let r=await fetchTcgdexEnergieOnce(TCGDEX, tcgdexId);
+  let r=await fetchTcgdexCardInfoOnce(TCGDEX, tcgdexId);
   if(r===null){
     // Certaines cartes (Galeries, Coffres Shiny, variantes de Célébrations) ne
     // sont pas dans la base française de TCGdex : on tente la version anglaise.
-    const en=await fetchTcgdexEnergieOnce(TCGDEX.replace('/v2/fr','/v2/en'), tcgdexId);
-    if(en!==null) r=en.split(',').map(t=>TCGDEX_TYPE_FR[t.trim()]||t.trim()).filter(Boolean).join(',');
+    const en=await fetchTcgdexCardInfoOnce(TCGDEX.replace('/v2/fr','/v2/en'), tcgdexId);
+    if(en!==null){
+      r={
+        energie: en.energie.split(',').map(t=>TCGDEX_TYPE_FR[t.trim()]||t.trim()).filter(Boolean).join(','),
+        rarete: en.rarete, // la rareté officielle reste cohérente d'une langue à l'autre
+        aReverse: en.aReverse
+      };
+    }
   }
   return r;
 }
@@ -5337,22 +5348,22 @@ async function diagTcgdex(id){
     try{
       const res=await fetch(`https://api.tcgdex.net/v2/${lang}/cards/${id}`);
       const data=res.ok ? await res.json() : null;
-      console.log(lang.toUpperCase(), 'statut', res.status, data ? ('types : '+JSON.stringify(data.types)+' · nom : '+data.name) : '(pas de données)');
+      console.log(lang.toUpperCase(), 'statut', res.status, data ? (`types : ${JSON.stringify(data.types)} · rareté : ${data.rarity} · reverse : ${!!(data.variants&&data.variants.reverse)} · nom : ${data.name}`) : '(pas de données)');
     }catch(e){ console.log(lang.toUpperCase(), 'erreur', e.message); }
   }
 }
 window.diagTcgdex=diagTcgdex;
-// Récupère les types d'une liste de cartes avec un nombre de requêtes
-// simultanées limité (poli envers l'API gratuite) et une petite pause
-// entre deux requêtes d'un même "ouvrier". Résultat : null = échec,
-// '' = carte sans type, sinon le type (ex. "Feu").
-async function fetchTcgdexEnergieBatch(cardsList, concurrency=5, onProgress){
+// Récupère type + rareté + existence du reverse pour une liste de cartes,
+// avec un nombre de requêtes simultanées limité (poli envers l'API gratuite)
+// et une petite pause entre deux requêtes d'un même "ouvrier".
+// Résultat : null = échec (à retenter), sinon {energie, rarete, aReverse}.
+async function fetchTcgdexInfoBatch(cardsList, concurrency=5, onProgress){
   const out=new Array(cardsList.length).fill(null);
   let idx=0, done=0;
   async function worker(){
     while(idx<cardsList.length){
       const i=idx++;
-      out[i]=await fetchTcgdexEnergie(cardsList[i].tcgdexId);
+      out[i]=await fetchTcgdexCardInfo(cardsList[i].tcgdexId);
       done++; if(onProgress) onProgress(done, cardsList.length);
       await new Promise(r=>setTimeout(r,80));
     }
@@ -5361,36 +5372,42 @@ async function fetchTcgdexEnergieBatch(cardsList, concurrency=5, onProgress){
   return out;
 }
 
-// Remet à niveau les cartes DÉJÀ importées (types d'énergie manquants) sans
-// tout réimporter. Réservé à Anthony, à lancer depuis la console :
+// Remet à niveau les cartes DÉJÀ importées (type, rareté officielle, existence
+// d'un print reverse) sans tout réimporter. Réservé à Anthony, à lancer depuis
+// la console :
 //   backfillEnergieForBloc('Méga Évolution')   → un seul bloc
 //   backfillEnergieAllBlocs()                  → tous les blocs, l'un après l'autre
-// Reprenable à tout moment : seules les cartes encore sans type sont traitées.
-// Les cartes sans type dans le jeu (Dresseur, Énergie) sont marquées "Aucun"
-// pour ne plus être retentées à chaque lancement.
+// Reprenable à tout moment : seules les cartes dont il manque une info sont
+// traitées. Les cartes sans type dans le jeu (Dresseur, Énergie) sont marquées
+// "Aucun" pour ne plus être retentées à chaque lancement.
 async function backfillEnergieCards(target, label){
   let withType=0, noType=0, failed=0, done=0;
   const SLICE=200; // on enregistre par tranches : une interruption ne perd presque rien
   for(let start=0; start<target.length; start+=SLICE){
     const slice=target.slice(start,start+SLICE);
-    const energies=await fetchTcgdexEnergieBatch(slice.map(c=>({tcgdexId:c.tcgdex_id})));
+    const infos=await fetchTcgdexInfoBatch(slice.map(c=>({tcgdexId:c.tcgdex_id})));
     const groups={};
     slice.forEach((c,i)=>{
-      const t=energies[i];
-      if(t===null){ failed++; return; }
-      const val=t||'Aucun';
-      (groups[val]=groups[val]||[]).push(c);
+      const info=infos[i];
+      if(info===null){ failed++; return; }
+      const energie=info.energie||'Aucun';
+      const rarete=info.rarete||'Inconnue';
+      // Clé composite : on ne regroupe que les cartes ayant EXACTEMENT la
+      // même combinaison des trois valeurs, pour patcher plusieurs cartes
+      // en une seule requête au lieu d'une par carte.
+      const key=energie+'|'+rarete+'|'+(info.aReverse?1:0);
+      (groups[key]=groups[key]||{energie,rarete,aReverse:info.aReverse,list:[]}).list.push(c);
     });
-    // Une seule requête par groupe de 50 cartes de même type (au lieu d'une par carte)
-    for(const val of Object.keys(groups)){
-      const list=groups[val];
+    for(const key of Object.keys(groups)){
+      const {energie,rarete,aReverse,list}=groups[key];
       for(let k=0;k<list.length;k+=50){
         const part=list.slice(k,k+50);
         try{
-          await sbPatch('cartes','?id=in.('+part.map(c=>encodeURIComponent(c.id)).join(',')+')',{energie:val});
-          part.forEach(c=>{ c.energie=val; });
-          if(val==='Aucun') noType+=part.length; else withType+=part.length;
-        }catch(e){ console.warn('Échec de mise à jour groupée',val,e); failed+=part.length; }
+          await sbPatch('cartes','?id=in.('+part.map(c=>encodeURIComponent(c.id)).join(',')+')',
+            {energie, rarete_tcgdex:rarete, a_reverse:aReverse});
+          part.forEach(c=>{ c.energie=energie; c.rarete_tcgdex=rarete; c.a_reverse=aReverse; });
+          if(energie==='Aucun') noType+=part.length; else withType+=part.length;
+        }catch(e){ console.warn('Échec de mise à jour groupée',key,e); failed+=part.length; }
       }
     }
     done+=slice.length;
@@ -5399,13 +5416,19 @@ async function backfillEnergieCards(target, label){
   return {withType,noType,failed};
 }
 
+function backfillEnergieTarget(cardsList){
+  // Il manque au moins une des trois infos (type, rareté, reverse) :
+  // c.energie peut déjà être rempli par un lancement précédent, mais pas
+  // encore rarete_tcgdex, donc on se base sur ce dernier.
+  return cardsList.filter(c=>c.tcgdex_id && (c.rarete_tcgdex==null || c.rarete_tcgdex===undefined));
+}
 async function backfillEnergieForBloc(blocNom){
   if(profileKey(currentUser)!=='anthony'){ showToast('Réservé à Anthony'); return; }
   if(currentGame!=='pokemon'){ showToast('Bascule sur Pokémon d\'abord'); return; }
   const bloc=blocs.find(b=>(b.nom||'').toLowerCase()===String(blocNom||'').toLowerCase());
   if(!bloc){ showToast('Bloc introuvable : '+blocNom); console.warn('Blocs disponibles :', blocs.map(b=>b.nom)); return; }
   const collIds=new Set(collections.filter(c=>c.bloc_id===bloc.id).map(c=>c.id));
-  const target=cartes.filter(c=>collIds.has(c.collection_id) && c.tcgdex_id && !c.energie);
+  const target=backfillEnergieTarget(cartes.filter(c=>collIds.has(c.collection_id)));
   if(!target.length){ showToast('Rien à mettre à jour pour ce bloc'); return; }
   showToast(`⏳ ${target.length} cartes à traiter (bloc ${bloc.nom})…`, 8000);
   const r=await backfillEnergieCards(target, bloc.nom);
@@ -5414,8 +5437,8 @@ async function backfillEnergieForBloc(blocNom){
 async function backfillEnergieAllBlocs(){
   if(profileKey(currentUser)!=='anthony'){ showToast('Réservé à Anthony'); return; }
   if(currentGame!=='pokemon'){ showToast('Bascule sur Pokémon d\'abord'); return; }
-  const todo=cartes.filter(c=>c.tcgdex_id && !c.energie);
-  if(!todo.length){ showToast('Rien à mettre à jour : toutes les cartes ont déjà leur type'); return; }
+  const todo=backfillEnergieTarget(cartes);
+  if(!todo.length){ showToast('Rien à mettre à jour : toutes les cartes sont déjà complètes'); return; }
   showToast(`⏳ ${todo.length} cartes à traiter (tous blocs). Garde cet onglet ouvert.`, 10000);
   const total={withType:0,noType:0,failed:0};
   for(const bloc of blocs){
@@ -5444,7 +5467,7 @@ async function importSelected(){
     // Type d'énergie de chaque carte (utile pour le scan) : une requête TCGdex
     // de plus par carte, faite une seule fois ici, jamais au moment du scan.
     showToast(`⏳ Récupération des types (${sorted.length} cartes)…`, 8000);
-    const energies=await fetchTcgdexEnergieBatch(sorted);
+    const infos=await fetchTcgdexInfoBatch(sorted);
     // Ordre calculé selon la position du numéro dans la collection (comme
     // pour l'ajout manuel), et non plus toujours après le maximum existant.
     // Avant ce correctif, importer une seule carte pour combler un manque
@@ -5453,7 +5476,7 @@ async function importSelected(){
     const workingCartes=[...cartes];
     const batch=sorted.map((c,i)=>{
       const ordre=computeOrder(collId, c.numero, workingCartes);
-      const row={collection_id:collId,nom:c.nom,numero:c.numero,image:c.imageHigh,ordre,tcgdex_id:c.tcgdexId||null,game_id:currentGame,energie:(energies[i]===null?null:(energies[i]||'Aucun'))};
+      const row={collection_id:collId,nom:c.nom,numero:c.numero,image:c.imageHigh,ordre,tcgdex_id:c.tcgdexId||null,game_id:currentGame,energie:(infos[i]?(infos[i].energie||'Aucun'):null),rarete_tcgdex:(infos[i]?(infos[i].rarete||'Inconnue'):null),a_reverse:(infos[i]?infos[i].aReverse:null)};
       workingCartes.push(row); // pour que la carte suivante du lot en tienne compte
       return row;
     });
