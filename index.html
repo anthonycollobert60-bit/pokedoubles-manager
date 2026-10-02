@@ -5895,6 +5895,8 @@ const RARETE_LABEL = { c:'Commune', r:'Reverse', p:'Pokéball', m:'Masterball' }
 // Une carte V/VMAX/EX (rareté 'c' faute de mieux) est étiquetée SPÉCIALE.
 function venteRarInfo(carte, rarete){
   if(rarete==='c'){
+    const info=rareteBadgeInfo(carte&&carte.rarete_tcgdex);
+    if(info) return { label:info.symbol+' '+carte.rarete_tcgdex, cls:'vente-rar-c', style:'background:'+info.bg+';color:'+info.fg+';' };
     if(cardExceedsSet(carte)) return { label:'Secrète', cls:'vente-rar-s' };
     if(cardIsSpecial(carte))  return { label:'Spéciale', cls:'vente-rar-x' };
   }
@@ -5986,7 +5988,7 @@ function renderVente(){
       <img src="${esc(optImg(c.image))}" loading="lazy" onclick='openModal("${c.id}")'>
       <div class="vente-info">
         <div class="vente-name">${esc(c.nom)}</div>
-        <div class="vente-meta">${esc(coll?.nom||'')} · n°${esc(c.numero||'')} · <span class="vente-rar ${ri.cls}">${ri.label}</span></div>
+        <div class="vente-meta">${esc(coll?.nom||'')} · n°${esc(c.numero||'')} · <span class="vente-rar ${ri.cls}" style="${ri.style||''}">${ri.label}</span></div>
         <div class="vente-row2">
           <span class="vente-price">${price>0?price.toFixed(2)+' €':'— €'}</span>
           <span class="vente-stock">x${x.qty} dispo</span>
@@ -6099,7 +6101,7 @@ function openVenteCart(){
     return `<div class="vc-line">
       <img src="${esc(optImg(c.image))}" loading="lazy">
       <div style="flex:1;min-width:0;">
-        <div style="font-size:13px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(c.nom)} <span class="vente-rar ${venteRarInfo(c,r).cls}">${venteRarInfo(c,r).label}</span></div>
+        <div style="font-size:13px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(c.nom)} <span class="vente-rar ${venteRarInfo(c,r).cls}" style="${venteRarInfo(c,r).style||''}">${venteRarInfo(c,r).label}</span></div>
         <div style="font-size:11px;color:var(--text2);">${esc(coll?.nom||'')} · ${price>0?price.toFixed(2)+' €':'— €'} × ${n}</div>
       </div>
       <div style="font-weight:900;font-family:'Space Mono',monospace;white-space:nowrap;">${sub.toFixed(2)} €</div>
@@ -6229,7 +6231,7 @@ function renderVenteDemandesAdminInner(){
         <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px;">
           ${items.map((it,idx)=>`<div style="display:flex;align-items:center;gap:8px;font-size:12px;">
             <div style="flex:1;min-width:0;">
-              <b>${esc(it.nom||'Carte')}</b> <span class="vente-rar ${venteRarInfo({numero:it.numero||''},it.rarete).cls}">${esc(RARETE_LABEL[it.rarete]||it.rarete)}</span>
+              <b>${esc(it.nom||'Carte')}</b> ${(()=>{ const itCard=cartes.find(x=>x.id===it.carte_id)||{numero:it.numero||''}; const itRi=venteRarInfo(itCard,it.rarete); return '<span class="vente-rar '+itRi.cls+'" style="'+(itRi.style||'')+'">'+esc(itRi.label)+'</span>'; })()}
               <div style="color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(it.collection||'')} · n°${esc(it.numero||'')} · ${(parseFloat(it.price_eur)||0).toFixed(2)} €</div>
             </div>
             <button class="vente-qbtn" onclick="venteDemandeQty('${d.id}',${idx},-1)">−</button>
@@ -6372,7 +6374,7 @@ function renderVenteCheckout(){
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
         <img src="${esc(optImg(c.image))}" style="width:36px;height:50px;object-fit:cover;border-radius:6px;background:var(--bg);">
         <div style="flex:1;min-width:0;">
-          <div style="font-size:13px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(c.nom)} <span class="vente-rar ${ri.cls}">${ri.label}</span></div>
+          <div style="font-size:13px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(c.nom)} <span class="vente-rar ${ri.cls}" style="${ri.style||''}">${ri.label}</span></div>
           <div style="font-size:11px;color:var(--text2);">${esc(coll?.nom||'')} · vendu : ${need}</div>
         </div>
         <div style="font-size:12px;font-weight:800;color:${ok?'var(--accent2)':'#ef4444'};white-space:nowrap;">${assigned}/${need}</div>
