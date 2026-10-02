@@ -2820,9 +2820,13 @@ function renderCards(collId, collNom, blocId, blocNom){
   // Construire tout le HTML en une seule chaîne (beaucoup plus rapide)
   const cardsHtml=cards.map(card=>{
     const img=optImg(card.image);
+    const badgeInfo=rareteBadgeInfo(card.rarete_tcgdex);
     const badgesHtml=TYPES.map(t=>{
       const total=owners.reduce((s,o)=>s+getQuantite(card.id,o,t),0);
-      return total>0?`<div class="badge badge-${t}">${t.toUpperCase()} ${total}</div>`:'';
+      if(total<=0) return '';
+      const style=(t==='c'&&badgeInfo)?` style="background:${badgeInfo.bg};color:${badgeInfo.fg};"`:'';
+      const label=(t==='c'&&badgeInfo)?badgeInfo.symbol:t.toUpperCase();
+      return `<div class="badge badge-${t}"${style}>${label} ${total}</div>`;
     }).join('');
     return `<div class="poke-card" data-id="${card.id}" data-nom="${(card.nom||'').toLowerCase()}" data-num="${(card.numero||'').toLowerCase()}" data-rarete="${(card.rarete_affichee||'').trim().toLowerCase()}">
       <img src="${esc(img)}" alt="${esc(card.nom)}" loading="lazy">
@@ -2851,7 +2855,9 @@ function renderCards(collId, collNom, blocId, blocNom){
     if(!sp || (sp.price_eur==null && sp.price_reverse==null)){ slot.innerHTML=''; return; }
     const ownsReverseView = owners.reduce((s,o)=>s+getQuantite(card.id,o,'r'),0)>0;
     const parts=[];
-    if(sp.price_eur!=null) parts.push(`<div class="price-badge">C ${Number(sp.price_eur).toFixed(2)} €</div>`);
+    const cardForBadge=cartes.find(c=>c.id===carteId);
+    const rLabel=rareteBadgeInfo(cardForBadge&&cardForBadge.rarete_tcgdex)?.symbol || 'C';
+    if(sp.price_eur!=null) parts.push(`<div class="price-badge">${rLabel} ${Number(sp.price_eur).toFixed(2)} €</div>`);
     if(ownsReverseView && sp.price_reverse!=null) parts.push(`<div class="price-badge price-badge-rev">R ${Number(sp.price_reverse).toFixed(2)} €</div>`);
     slot.innerHTML=parts.join('');
   });
@@ -2894,9 +2900,14 @@ function updateTypeFilterOptions(cards){
 
 function buildBadges(container, carteId, viewOwner){
   const owners=viewOwner?[viewOwner]:OWNERS;
+  const cardForBadges=cartes.find(c=>c.id===carteId);
+  const badgeInfo2=rareteBadgeInfo(cardForBadges&&cardForBadges.rarete_tcgdex);
   container.innerHTML=TYPES.map(t=>{
     const total=owners.reduce((s,o)=>s+getQuantite(carteId,o,t),0);
-    return total>0 ? `<div class="badge badge-${t}">${t.toUpperCase()} ${total}</div>` : '';
+    if(total<=0) return '';
+    const style=(t==='c'&&badgeInfo2)?` style="background:${badgeInfo2.bg};color:${badgeInfo2.fg};"`:'';
+    const label=(t==='c'&&badgeInfo2)?badgeInfo2.symbol:t.toUpperCase();
+    return `<div class="badge badge-${t}"${style}>${label} ${total}</div>`;
   }).join('');
 }
 
@@ -3171,7 +3182,9 @@ function refreshCardPriceSlot(carteId){
   const render=p=>{
     if(!(p&&(p.normal!=null||p.reverse!=null))){ slot.innerHTML=''; return; }
     const parts=[];
-    if(p.normal!=null) parts.push(`<div class="price-badge">C ${p.normal.toFixed(2)} €</div>`);
+    const cardR=cartes.find(c=>c.id===carteId);
+    const rLabel2=rareteBadgeInfo(cardR&&cardR.rarete_tcgdex)?.symbol || 'C';
+    if(p.normal!=null) parts.push(`<div class="price-badge">${rLabel2} ${p.normal.toFixed(2)} €</div>`);
     const vo=currentUser||null; const ownersV=vo?[vo]:OWNERS;
     const ownsReverse=ownersV.reduce((s,o)=>s+getQuantite(carteId,o,'r'),0)>0;
     if(ownsReverse && p.reverse!=null) parts.push(`<div class="price-badge price-badge-rev">R ${p.reverse.toFixed(2)} €</div>`);
@@ -7259,7 +7272,11 @@ function renderScanConfirm(card, detected){
   const availTypes=TYPES.filter(t=>collectionHasRarete(card.id, t));
   // Rareté par défaut = première disponible (Commune en pratique)
   scanRarity = availTypes.includes('c') ? 'c' : (availTypes[0]||'c');
-  const rarityBtns=availTypes.map(t=>`<button data-r="${t}" class="${t===scanRarity?'active':''}" onclick="setScanRarity('${t}')">${t.toUpperCase()}</button>`).join('');
+  const scanBtnBadgeInfo=rareteBadgeInfo(card&&card.rarete_tcgdex);
+  const rarityBtns=availTypes.map(t=>{
+    const label=(t==='c'&&scanBtnBadgeInfo)?scanBtnBadgeInfo.symbol:t.toUpperCase();
+    return `<button data-r="${t}" class="${t===scanRarity?'active':''}" onclick="setScanRarity('${t}')">${label}</button>`;
+  }).join('');
   box.innerHTML=`<div class="scan-result">
     ${detected?`<div class="sr-detected">${esc(detected)}</div>`:''}
     <div class="sr-card">
@@ -7295,9 +7312,13 @@ function renderScanConfirm(card, detected){
 function updateScanRecap(carteId){
   const recap=document.getElementById('srRecap');
   if(!recap) return;
+  const cardForScanRecap=cartes.find(c=>c.id===carteId);
+  const scanBadgeInfo=rareteBadgeInfo(cardForScanRecap&&cardForScanRecap.rarete_tcgdex);
   const parts=TYPES.map(t=>{
     const q=getQuantite(carteId, currentUser, t);
-    return q>0 ? `<span class="sr-recap-chip"><span class="badge badge-${t}">${t.toUpperCase()}</span> ${q}</span>` : '';
+    const style=(t==='c'&&scanBadgeInfo)?` style="background:${scanBadgeInfo.bg};color:${scanBadgeInfo.fg};"`:'';
+    const label=(t==='c'&&scanBadgeInfo)?scanBadgeInfo.symbol:t.toUpperCase();
+    return q>0 ? `<span class="sr-recap-chip"><span class="badge badge-${t}"${style}>${label}</span> ${q}</span>` : '';
   }).filter(Boolean);
   recap.innerHTML = parts.length
     ? `<div class="sr-recap"><span style="font-size:11px;color:var(--text2);font-weight:700;">Déjà dans ta collection :</span> ${parts.join('')}</div>`
@@ -7380,9 +7401,13 @@ function doGlobalSearch(){
     const coll=collections.find(c=>c.id===card.collection_id);
     const bloc=blocs.find(b=>b.id===coll?.bloc_id);
     const img=optImg(card.image);
+    const badgeInfo=rareteBadgeInfo(card.rarete_tcgdex);
     const badgesHtml=TYPES.map(t=>{
       const total=owners.reduce((s,o)=>s+getQuantite(card.id,o,t),0);
-      return total>0?`<div class="badge badge-${t}">${t.toUpperCase()} ${total}</div>`:'';
+      if(total<=0) return '';
+      const style=(t==='c'&&badgeInfo)?` style="background:${badgeInfo.bg};color:${badgeInfo.fg};"`:'';
+      const label=(t==='c'&&badgeInfo)?badgeInfo.symbol:t.toUpperCase();
+      return `<div class="badge badge-${t}"${style}>${label} ${total}</div>`;
     }).join('');
     return `<div class="poke-card" data-id="${card.id}">
       <img src="${esc(img)}" alt="${esc(card.nom)}" loading="lazy">
