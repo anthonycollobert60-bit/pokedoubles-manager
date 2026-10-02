@@ -793,6 +793,7 @@ window.PokeCardsFCM = {
       <span>Recherche globale</span>
     </div>
     <div class="topbar-right">
+      <button class="icon-btn" id="adminConsoleBtn" onclick="openAdminConsole()" title="Console" style="display:none;">🛠️</button>
       <button class="icon-btn" onclick="clearCache()" title="Vider le cache">
         <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
       </button>
@@ -1480,6 +1481,58 @@ function priceCache_overrideManual(carteId, normal, reverse){
 
 function optImg(url){ if(!url) return 'https://via.placeholder.com/240x336?text=?'; return url.replace(/-2x\.(png|jpg|jpeg|webp)/gi,'.$1'); }
 function showToast(msg,dur=2800){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),dur); }
+// Mini-console intégrée, réservée à Anthony : permet de lancer les commandes
+// d'administration (backfillEnergieForBloc, etc.) directement depuis le
+// téléphone, sans ordinateur ni bidouille de favori JavaScript.
+function openAdminConsole(){
+  if(profileKey(currentUser)!=='anthony') return;
+  let ov=document.getElementById('adminConsoleOverlay');
+  if(ov) ov.remove();
+  ov=document.createElement('div');
+  ov.id='adminConsoleOverlay';
+  ov.style.cssText='position:fixed;top:0;right:0;bottom:0;left:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+  ov.innerHTML=`<div style="background:var(--surface,#1b1e27);border-radius:16px;padding:16px;max-width:480px;width:100%;max-height:85vh;display:flex;flex-direction:column;gap:10px">
+    <h3 style="margin:0">🛠️ Console</h3>
+    <textarea id="adminConsoleInput" rows="3" style="width:100%;font-family:monospace;font-size:13px;padding:8px;border-radius:8px;background:var(--bg2,#11131a);color:inherit;border:1px solid var(--border,#333);box-sizing:border-box" placeholder="backfillEnergieForBloc('Méga Évolution')"></textarea>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn-primary" style="flex:1" id="adminConsoleRun">Exécuter</button>
+      <button class="btn-secondary" id="adminConsoleClear">Effacer</button>
+      <button class="btn-secondary" id="adminConsoleClose">Fermer</button>
+    </div>
+    <pre id="adminConsoleOutput" style="flex:1;overflow:auto;background:#000;color:#0f0;font-size:12px;padding:8px;border-radius:8px;white-space:pre-wrap;word-break:break-word;margin:0;min-height:140px;max-height:50vh"></pre>
+  </div>`;
+  document.body.appendChild(ov);
+  const input=ov.querySelector('#adminConsoleInput');
+  const outEl=ov.querySelector('#adminConsoleOutput');
+  function logLine(prefix,args){
+    const txt=args.map(a=>{ try{ return typeof a==='object'?JSON.stringify(a):String(a); }catch(e){ return String(a); } }).join(' ');
+    outEl.textContent += `[${prefix}] ${txt}\n`;
+    outEl.scrollTop=outEl.scrollHeight;
+  }
+  ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
+  ov.querySelector('#adminConsoleClose').onclick=()=>ov.remove();
+  ov.querySelector('#adminConsoleClear').onclick=()=>{ outEl.textContent=''; };
+  ov.querySelector('#adminConsoleRun').onclick=async ()=>{
+    const code=input.value;
+    if(!code.trim()) return;
+    logLine('>',[code]);
+    const origLog=console.log, origWarn=console.warn, origErr=console.error;
+    console.log=(...a)=>{ origLog(...a); logLine('log',a); };
+    console.warn=(...a)=>{ origWarn(...a); logLine('warn',a); };
+    console.error=(...a)=>{ origErr(...a); logLine('error',a); };
+    try{
+      const fn=new Function('return (async()=>{ '+code+' })()');
+      const result=await fn();
+      if(result!==undefined) logLine('résultat',[result]);
+    }catch(e){
+      logLine('exception',[e.message||String(e)]);
+    }finally{
+      console.log=origLog; console.warn=origWarn; console.error=origErr;
+    }
+  };
+}
+window.openAdminConsole=openAdminConsole;
+
 function toggleTheme(){ const h=document.documentElement; h.dataset.theme=h.dataset.theme==='dark'?'light':'dark'; localStorage.setItem('theme',h.dataset.theme); }
 (function(){ const s=localStorage.getItem('theme'); if(s) document.documentElement.dataset.theme=s; })();
 function resetFilters(){ document.getElementById('typeFilter').value='all'; document.getElementById('searchAll').value=''; const cb=document.getElementById('collSearchClear'); if(cb) cb.style.display='none'; }
@@ -1984,6 +2037,7 @@ function enterApp(){
 
   document.getElementById('tabCollection').style.display = currentUser ? '' : 'none';
   document.getElementById('tabAdmin').style.display = currentUser==='anthony' ? '' : 'none';
+  const consoleBtn=document.getElementById('adminConsoleBtn'); if(consoleBtn) consoleBtn.style.display = currentUser==='anthony' ? '' : 'none';
   document.getElementById('tabStock').style.display = currentUser ? '' : 'none';
   document.getElementById('tabScan').style.display = currentUser ? '' : 'none';
   document.getElementById('tabProfile').style.display = currentUser ? '' : 'none';
