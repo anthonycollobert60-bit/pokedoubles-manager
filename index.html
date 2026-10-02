@@ -2058,7 +2058,7 @@ function enterApp(){
 
   document.getElementById('tabCollection').style.display = currentUser ? '' : 'none';
   document.getElementById('tabAdmin').style.display = currentUser==='anthony' ? '' : 'none';
-  const consoleBtn=document.getElementById('adminConsoleBtn'); if(consoleBtn) consoleBtn.style.display = currentUser==='anthony' ? '' : 'none';
+  const consoleBtn=document.getElementById('adminConsoleBtn'); if(consoleBtn) consoleBtn.style.display = profileKey(currentUser)==='anthony' ? '' : 'none';
   document.getElementById('tabStock').style.display = currentUser ? '' : 'none';
   document.getElementById('tabScan').style.display = currentUser ? '' : 'none';
   document.getElementById('tabProfile').style.display = currentUser ? '' : 'none';
