@@ -2828,7 +2828,7 @@ function renderCards(collId, collNom, blocId, blocNom){
       const label=(t==='c'&&badgeInfo)?badgeInfo.symbol:t.toUpperCase();
       return `<div class="badge badge-${t}"${style}>${label} ${total}</div>`;
     }).join('');
-    return `<div class="poke-card" data-id="${card.id}" data-nom="${(card.nom||'').toLowerCase()}" data-num="${(card.numero||'').toLowerCase()}" data-rarete="${(card.rarete_affichee||'').trim().toLowerCase()}">
+    return `<div class="poke-card" data-id="${card.id}" data-nom="${(card.nom||'').toLowerCase()}" data-num="${(card.numero||'').toLowerCase()}" data-rarete="${(card.rarete_affichee||card.rarete_tcgdex||'').trim().toLowerCase()}">
       <img src="${esc(img)}" alt="${esc(card.nom)}" loading="lazy">
       <div class="poke-card-name">${esc(card.nom)}</div>
       <div class="poke-card-num">${esc(card.numero||'')}</div>
@@ -2871,7 +2871,7 @@ function updateTypeFilterOptions(cards){
   if(!select) return;
   const previous=select.value;
   const raretesOfficielles=[...new Set(
-    (cards||[]).map(c=>(c.rarete_affichee||'').trim()).filter(Boolean)
+    (cards||[]).map(c=>(c.rarete_affichee||c.rarete_tcgdex||'').trim()).filter(Boolean)
   )].sort((a,b)=>{
     const ia=RARETE_OFFICIELLE_ORDRE.indexOf(a.toLowerCase());
     const ib=RARETE_OFFICIELLE_ORDRE.indexOf(b.toLowerCase());
@@ -2884,7 +2884,11 @@ function updateTypeFilterOptions(cards){
     // Ce jeu n'a pas de variantes normale/reverse/pokéball/masterball (ex.
     // Gentle Mates) : le filtre propose ses raretés officielles à la place.
     select.innerHTML='<option value="all">Toutes les cartes</option>'
-      +raretesOfficielles.map(r=>'<option value="rarete:'+esc(r.toLowerCase())+'">'+esc(r)+'</option>').join('');
+      +raretesOfficielles.map(r=>{
+        const info=(currentGame==='pokemon')?rareteBadgeInfo(r):null;
+        const label=(info?info.symbol+' ':'')+r;
+        return '<option value="rarete:'+esc(r.toLowerCase())+'">'+esc(label)+'</option>';
+      }).join('');
   } else {
     select.innerHTML=`
       <option value="all">Toutes les raretés</option>
