@@ -7318,12 +7318,16 @@ function showScanList(candidates, detected){
 }
 
 // Recherche manuelle dans toute la base (repli si la bonne carte n'est pas proposée)
+// Recherche manuelle (repli si la bonne carte n'est pas proposée), limitée
+// à la série choisie quand une série est sélectionnée en amont du scan —
+// sinon une carte homonyme d'une autre série pouvait apparaître par erreur.
 function scanManualSearch(q){
   const res=document.getElementById('scanManualResults');
   if(!res) return;
   q=(q||'').trim().toLowerCase();
   if(q.length<2){ res.innerHTML=''; return; }
-  const found=cartes.filter(c=>{
+  const pool = scanCollFilter ? cartes.filter(c=>c.collection_id===scanCollFilter) : cartes;
+  const found=pool.filter(c=>{
     const nom=(c.nom||'').toLowerCase();
     const numero=(c.numero||'').toLowerCase();
     return nom.includes(q) || numero.includes(q);
