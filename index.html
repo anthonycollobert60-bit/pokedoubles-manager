@@ -1086,6 +1086,10 @@ window.switchGame=switchGame;
 window.openGameSwitcher=openGameSwitcher;
 window.gameChipHtml=gameChipHtml;
 const TYPE_LABELS = { c:'Commune', r:'Reverse', p:'Pokéball', m:'Masterball' };
+function rareteDisplayLabel(card, t){
+  if(t==='c' && card && card.rarete_tcgdex && card.rarete_tcgdex!=='Inconnue') return card.rarete_tcgdex;
+  return TYPE_LABELS[t] || String(t).toUpperCase();
+}
 const TCGDEX   = 'https://api.tcgdex.net/v2/fr';
 
 /* ══ STATE ═════════════════════════════════════════════ */
@@ -2789,7 +2793,7 @@ function renderCards(collId, collNom, blocId, blocNom){
     <button class="back-btn" onclick="renderCollections('${blocId}','${esc(blocNom)}')">
       <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>Retour
     </button>
-    ${currentUser==='anthony'?`<button class="back-btn" style="margin-left:8px;" onclick="setCollectionTotal('${collId}')" title="Définir le nombre de cartes du set (pour gérer les cartes secrètes sans reverse)">⚙️ ${totalLabel}</button>`:''}`;
+`;
   const body=document.getElementById('appBody');
   const cards=cartes.filter(c=>c.collection_id===collId)
     .sort((a,b)=>cardOrderNum(a.numero)-cardOrderNum(b.numero));
@@ -3091,7 +3095,7 @@ function fillModal(carteId){
     if(p && (p.normal!=null || p.reverse!=null)){
       priceEl.className='modal-price';
       const parts=[];
-      if(p.normal!=null) parts.push(`<div class="price-badge" style="font-size:13px;padding:4px 12px;">Commune ${p.normal.toFixed(2)} €</div>`);
+      if(p.normal!=null) parts.push(`<div class="price-badge" style="font-size:13px;padding:4px 12px;">${esc(rareteDisplayLabel(card,'c'))} ${p.normal.toFixed(2)} €</div>`);
       const voM=currentUser||null; const ownersM=voM?[voM]:OWNERS;
       const ownsReverse=ownersM.reduce((s,o)=>s+getQuantite(carteId,o,'r'),0)>0;
       if(ownsReverse && p.reverse!=null) parts.push(`<div class="price-badge price-badge-rev" style="font-size:13px;padding:4px 12px;">Reverse ${p.reverse.toFixed(2)} €</div>`);
@@ -3217,6 +3221,7 @@ function modalNav(dir){
 }
 
 function renderModalQty(carteId){
+  const carteForLabel=cartes.find(c=>c.id===carteId);
   const area=document.getElementById('modalOwnersArea');
   if(!currentUser){
     // Continuer en tant que visiteur : total par rareté, uniquement si > 0
@@ -3230,7 +3235,7 @@ function renderModalQty(carteId){
         const b=document.createElement('div');
         b.className='badge badge-'+t;
         b.style.cssText='padding:5px 10px;font-size:11px;';
-        b.textContent=`${TYPE_LABELS[t]} : ${total}`;
+        b.textContent=`${rareteDisplayLabel(carteForLabel,t)} : ${total}`;
         area.appendChild(b);
       }
     });
@@ -3251,7 +3256,7 @@ function renderModalQty(carteId){
       row.className='qty-row';
       row.id=`qrow-${carteId}-${currentUser}-${t}`;
       row.innerHTML=`
-        <span class="qty-label"><span class="badge badge-${t}" style="margin-right:4px;">${t.toUpperCase()}</span>${TYPE_LABELS[t]}</span>
+        <span class="qty-label"><span class="badge badge-${t}" style="margin-right:4px;">${t.toUpperCase()}</span>${rareteDisplayLabel(carteForLabel,t)}</span>
         <div class="qty-controls">
           <button class="qty-btn" onclick="changeQty('${carteId}','${currentUser}','${t}',-1)">−</button>
           <span class="qty-val" id="qv-${carteId}-${currentUser}-${t}">${val}</span>
@@ -3347,9 +3352,11 @@ function collectionHasRarete(carteId, rarete){
   if(!coll) return true;
   // La Commune est toujours disponible
   if(rarete==='c') return true;
-  // Cartes secrètes (numéro > total du set) ou cartes spéciales (V/VMAX/EX…) : UNIQUEMENT Commune
-  if(cardExceedsSet(carte) || cardIsSpecial(carte)) return false;
-  // Sinon : Reverse toujours, Pokéball/Masterball selon la collection
+  // Donnée TCGdex fiable, quand on l'a : un print reverse existe ou non pour
+  // CETTE carte précise. Sinon (bloc pas encore mis à jour), on garde l'ancienne
+  // estimation par numéro (cartes secrètes/spéciales) comme repli.
+  if(carte.a_reverse===false) return false;
+  if(carte.a_reverse!==true && (cardExceedsSet(carte) || cardIsSpecial(carte))) return false;
   if(rarete==='r') return true;
   if(rarete==='p') return coll.has_pokeball===true;
   if(rarete==='m') return coll.has_masterball===true;
@@ -3357,6 +3364,7 @@ function collectionHasRarete(carteId, rarete){
 }
 
 function chooseRareteToAdd(carteId, joueur){
+  const carteForLabel=cartes.find(c=>c.id===carteId);
   // Raretés disponibles = à 0 pour ce joueur ET présentes dans la collection
   const available=TYPES.filter(t=>{
     if(getQuantite(carteId,joueur,t)>0) return false; // déjà possédée
@@ -3369,7 +3377,7 @@ function chooseRareteToAdd(carteId, joueur){
   addDiv.innerHTML=`
     <div style="display:flex;gap:6px;align-items:center;margin-top:2px;">
       <select id="sel-rarete-${carteId}" style="flex:1;padding:7px 8px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-family:'Nunito',sans-serif;font-size:13px;font-weight:700;outline:none;">
-        ${available.map(t=>`<option value="${t}">${TYPE_LABELS[t]}</option>`).join('')}
+        ${available.map(t=>`<option value="${t}">${rareteDisplayLabel(carteForLabel,t)}</option>`).join('')}
       </select>
       <input id="sel-qty-${carteId}" type="number" min="1" value="1"
         style="width:60px;padding:7px 8px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-family:'Space Mono',monospace;font-size:13px;font-weight:700;text-align:center;outline:none;"
