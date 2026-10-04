@@ -6631,8 +6631,12 @@ function onScanCollInput(q){
   // Construire les résultats groupés par bloc
   let html='';
   blocs.forEach(b=>{
-    const cs=sortCollectionsInBloc(b.id).filter(c=>
-      (!q || (c.nom||'').toLowerCase().includes(q) || (b.nom||'').toLowerCase().includes(q)));
+    const all=sortCollectionsInBloc(b.id);
+    const direct=all.filter(c=>!q || (c.nom||'').toLowerCase().includes(q));
+    // Repli "nom du bloc" uniquement si AUCUNE série de ce bloc ne porte
+    // elle-même ce nom (sinon ça resterait un moyen pratique de parcourir
+    // tout un bloc en tapant juste son nom).
+    const cs = (q && direct.length===0 && (b.nom||'').toLowerCase().includes(q)) ? all : direct;
     if(!cs.length) return;
     html+=`<div style="padding:6px 12px;font-size:11px;font-weight:800;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;">${esc(b.nom)}</div>`;
     html+=cs.map(c=>`<div onclick='pickScanColl("${c.id}")' style="padding:10px 12px;cursor:pointer;font-size:14px;font-weight:600;border-top:1px solid var(--border);">${esc(c.nom)}</div>`).join('');
@@ -7332,9 +7336,16 @@ function showScanResult(candidates, detected){
 function showScanList(candidates, detected){
   const box=document.getElementById('scanResultArea');
   if(!box) return;
+  // La recherche manuelle est placée AVANT les cartes proposées : plus
+  // visible, pas besoin de faire défiler jusqu'en bas pour la trouver —
+  // important pour quelqu'un qui découvre l'app.
   box.innerHTML=`<div class="scan-result">
     <div class="sr-detected">${esc(detected||'')} · ${candidates.length} carte(s)</div>
-    <p style="font-size:14px;font-weight:800;margin-bottom:10px;">Laquelle est-ce ?</p>
+    <p style="font-size:12px;color:var(--text2);font-weight:600;margin-bottom:6px;">🔎 Cherche directement la bonne carte :</p>
+    <input id="scanManualSearch" type="text" placeholder="Nom ou numéro de la carte…" oninput="scanManualSearch(this.value)"
+      style="width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px;margin-bottom:6px;">
+    <div class="sr-choices" id="scanManualResults"></div>
+    <p style="font-size:14px;font-weight:800;margin:12px 0 10px;">Ou choisis parmi les cartes proposées :</p>
     <div class="sr-choices">
       ${candidates.slice(0,20).map(c=>{
         const coll=collections.find(x=>x.id===c.collection_id);
@@ -7346,11 +7357,7 @@ function showScanList(candidates, detected){
           </div></div>`;
       }).join('')}
     </div>
-    <p style="font-size:12px;color:var(--text2);font-weight:600;margin:4px 0 8px;">Pas dans la liste ? Cherche-la :</p>
-    <input id="scanManualSearch" type="text" placeholder="Nom ou numéro de la carte…" oninput="scanManualSearch(this.value)"
-      style="width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px;margin-bottom:8px;">
-    <div class="sr-choices" id="scanManualResults"></div>
-    <div class="sr-actions"><button class="sr-retry" onclick="retryScan()">📷 Carte suivante</button></div></div>`;
+    <div class="sr-actions" style="margin-top:10px;"><button class="sr-retry" onclick="retryScan()">📷 Carte suivante</button></div></div>`;
   box.scrollIntoView({behavior:'smooth'});
 }
 
