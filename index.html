@@ -7228,14 +7228,7 @@ function handleScanText(rawText, srcCanvas){
     return best;
   }
 
-  // Référence : le dénominateur que PARTAGENT toutes les cartes de cette
-  // série (ex. "132" pour Méga Évolution). Si l'OCR lit un dénominateur très
-  // différent, le numéro entier (numérateur compris) est suspect.
-  const refTot=(()=>{
-    for(const c of pool){ const m=(c.numero||'').match(/\/\s*(\d{1,3})/); if(m) return parseInt(m[1]); }
-    return null;
-  })();
-  const totSuspect = (tot!=null && refTot!=null && tot!==refTot);
+  // (totSuspect déjà calculé plus haut, dès la lecture du numéro.)
 
   // Score chaque carte. Tes numéros sont stockés en simple chiffre ("1"), donc le NOM + le NUMÉRO priment.
   const scored=pool.map(c=>{
@@ -7254,8 +7247,8 @@ function handleScanText(rawText, srcCanvas){
     // 2) NUMÉRO de la carte
     let numHit=false;
     if(num!=null && cNum!=null && !totSuspect){
-      if(cNum===num){ score+=55; numHit=true; }
-      else if(numProche(cNum,num)){ score+=22; numHit=true; }
+      if(cNum===num){ score+=lowConfidence?25:55; numHit=true; }
+      else if(numProche(cNum,num)){ score+=lowConfidence?10:22; numHit=true; }
     }
 
     // 3) TOTAL du set — seulement si stocké (rare ici), léger bonus
@@ -7279,10 +7272,11 @@ function handleScanText(rawText, srcCanvas){
 
   // Filtrage intelligent pour éviter le bruit
   let candidates;
-  if(scanCollFilter && num!=null && totSuspect){
-    // Dénominateur incohérent avec cette série (ex. carte reverse/brillante
-    // qui a perturbé la lecture) : on ne fait plus confiance au numéro seul.
-    detected=(detected||'')+' · numéro peu fiable (reflet ?), vérifie bien';
+  if(scanCollFilter && num!=null && (totSuspect || lowConfidence)){
+    // Dénominateur incohérent, ou numéro trouvé en mode rapide (nombre isolé
+    // dans le texte, sans le "/total" à côté) : pas assez fiable pour
+    // imposer une carte précise — fréquent sur les cartes reverse/brillantes.
+    detected=(detected||'')+(totSuspect?' · numéro peu fiable (reflet ?), vérifie bien':' · numéro incertain, vérifie bien');
     const strongScored=scored.filter(x=>x.score>=40);
     candidates = strongScored.length ? strongScored.map(x=>x.c) : [...pool].sort((a,b)=>cardOrderNum(a.numero)-cardOrderNum(b.numero));
   } else if(scanCollFilter && num!=null){
