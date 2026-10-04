@@ -7155,16 +7155,35 @@ function handleScanText(rawText, srcCanvas){
   let detected='';
   let num = (numMatch && parseInt(numMatch[1])>0) ? parseInt(numMatch[1]) : null;
   const tot = (numMatch && parseInt(numMatch[2])>0) ? parseInt(numMatch[2]) : null;
+  // Lecture "mode rapide" (juste un nombre perdu dans le texte, sans le
+  // "/total" à côté) : beaucoup moins fiable qu'un vrai "xxx/yyy" repéré
+  // clairement — un reflet ou un grain de l'image peut faire lire n'importe
+  // quel petit nombre. On ne lui fait jamais confiance à l'aveugle.
+  let lowConfidence=false;
   if(num!=null){
     detected=`N° détecté : ${num}${tot?'/'+tot:''}`;
   } else if(scanCollFilter){
-    // Mode rapide : prendre le premier nombre VALIDE (>0), pas "000"
     const allNums=(text.match(/\d{1,3}/g)||[]).map(n=>parseInt(n)).filter(n=>n>0 && n<1000);
-    if(allNums.length){ num=allNums[0]; detected=`N° détecté : ${num}`; }
+    if(allNums.length){ num=allNums[0]; detected=`N° détecté : ${num}`; lowConfidence=true; }
   }
 
-  // APPRENTISSAGE : si le numéro détecté correspond à une carte déjà apprise (dans cette collection), la proposer directement
-  if(num!=null && scanCollFilter){
+  // Dénominateur réellement imprimé sur les cartes de cette série (déduit
+  // des cartes elles-mêmes, pas d'un éventuel réglage manuel ancien qui
+  // pourrait ne plus correspondre). Sert à repérer un numéro mal lu —
+  // fréquent sur les cartes reverse/brillantes à cause du reflet.
+  const refTotEarly = (()=>{
+    if(!scanCollFilter) return 0;
+    const cs=cartes.filter(c=>c.collection_id===scanCollFilter);
+    for(const c of cs){ const m=(c.numero||'').match(/\/\s*(\d{1,3})/); if(m) return parseInt(m[1]); }
+    return 0;
+  })();
+  const totSuspect = (tot!=null && refTotEarly>0 && tot!==refTotEarly);
+  if(totSuspect) detected=(detected||'')+' (dénominateur incohérent)';
+
+  // APPRENTISSAGE : seulement sur une lecture fiable (numéro propre et
+  // dénominateur cohérent) — sinon on risquerait de reproduire une erreur
+  // déjà apprise par le passé sur cette même carte difficile à lire.
+  if(num!=null && scanCollFilter && !totSuspect && !lowConfidence){
     const learned=findLearnedByNum(num);
     if(learned){
       const c=cartes.find(x=>x.id===learned.carte_id && x.collection_id===scanCollFilter);
