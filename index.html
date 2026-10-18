@@ -1119,6 +1119,7 @@ function rareteBadgeInfo(rareteTcgdex){
   return null; // rareté pré-Écarlate/Violet ou inconnue : on garde l'ancien badge à lettre
 }
 function rareteDisplayLabel(card, t){
+  if(t==='c' && card && card.rarete_affichee) return card.rarete_affichee;
   if(t==='c' && card && card.rarete_tcgdex && card.rarete_tcgdex!=='Inconnue') return card.rarete_tcgdex;
   return TYPE_LABELS[t] || String(t).toUpperCase();
 }
@@ -2694,23 +2695,28 @@ function loadFromCache(){
   }catch(e){ return false; }
 }
 
-function saveToCache(){
+function saveToCache(gameId){
+  // Jeu ciblé explicitement (celui qui vient d'être chargé), pas forcément
+  // le jeu actif au moment où ce code s'exécute si l'utilisateur a changé
+  // de jeu entre-temps : sinon on écrirait les données du nouveau jeu sous
+  // la clé de l'ancien, ou l'inverse.
+  const targetGame=gameId||currentGame;
   // Version allégée des cartes (comme l'app Collection) : moins de risque
   // de dépasser le quota de stockage, et on tente un repli sans les cartes
   // puis un dernier nettoyage plutôt que d'échouer en silence.
   const compactCartes=(cartes||[]).map(c=>({
     id:c.id, nom:c.nom, numero:c.numero, image:c.image,
-    collection_id:c.collection_id, ordre:c.ordre, tcgdex_id:c.tcgdex_id, energie:c.energie, rarete_tcgdex:c.rarete_tcgdex, a_reverse:c.a_reverse
+    collection_id:c.collection_id, ordre:c.ordre, tcgdex_id:c.tcgdex_id, energie:c.energie, rarete_tcgdex:c.rarete_tcgdex, a_reverse:c.a_reverse, rarete_affichee:c.rarete_affichee
   }));
   const priceList=Object.entries(storedPrices||{}).map(([carte_id,p])=>({carte_id,price_eur:p.price_eur,price_reverse:p.price_reverse,updated_at:p.updated_at,is_manual:p.is_manual}));
   try{
-    localStorage.setItem(fastCacheKeyForGame(currentGame), JSON.stringify({
+    localStorage.setItem(fastCacheKeyForGame(targetGame), JSON.stringify({
       t:Date.now(), blocs,collections,cartes:compactCartes,quantites,prices:priceList
     }));
   }catch(e){
     console.warn('Sauvegarde du cache local (complet) impossible, tentative sans les cartes :',e);
     try{
-      localStorage.setItem(fastCacheKeyForGame(currentGame), JSON.stringify({
+      localStorage.setItem(fastCacheKeyForGame(targetGame), JSON.stringify({
         t:Date.now(), blocs,collections,cartes:[],quantites,prices:priceList
       }));
     }catch(e2){
@@ -2718,7 +2724,7 @@ function saveToCache(){
       try{
         AVAILABLE_GAMES.forEach(g=>localStorage.removeItem(fastCacheKeyForGame(g.id)));
         localStorage.removeItem('pokecards_main_catalog_v12_light');
-        localStorage.setItem(fastCacheKeyForGame(currentGame), JSON.stringify({
+        localStorage.setItem(fastCacheKeyForGame(targetGame), JSON.stringify({
           t:Date.now(), blocs,collections,cartes:[],quantites,prices:priceList
         }));
       }catch(e3){
@@ -2728,7 +2734,27 @@ function saveToCache(){
   }
 }
 
+let _loadDataInFlight=null;
+let _loadDataInFlightGame=null;
 async function loadData(){
+  // Important : la promesse en vol n'est réutilisée que si elle charge déjà
+  // le MÊME jeu. Sinon (changement de jeu pendant un chargement en cours),
+  // il faut vraiment relancer une requête pour le nouveau jeu : sans ce
+  // garde-fou, switchGame() recevait silencieusement les données de
+  // l'ancien jeu (celles déjà en vol) au lieu du nouveau.
+  if(_loadDataInFlight && _loadDataInFlightGame===currentGame) return _loadDataInFlight;
+  const myGame=currentGame;
+  _loadDataInFlightGame=myGame;
+  _loadDataInFlight=(async()=>{
+  try{
+    return await _loadDataCore(myGame);
+  }finally{
+    if(_loadDataInFlightGame===myGame){ _loadDataInFlight=null; _loadDataInFlightGame=null; }
+  }
+  })();
+  return _loadDataInFlight;
+}
+async function _loadDataCore(requestedGame){
   // 1. Affichage instantané depuis le cache si disponible
   const hasCache=loadFromCache();
   if(hasCache){
@@ -2746,6 +2772,12 @@ async function loadData(){
       sbGet('quantites','?select=*'),
       sbGet('card_prices','?select=carte_id,price_eur,price_reverse,updated_at,is_manual')
     ]);
+    // Le joueur a changé de jeu pendant que cette requête était en vol : ce
+    // résultat correspond à l'ANCIEN jeu et ne doit surtout pas écraser les
+    // données déjà affichées pour le nouveau. On l'ignore silencieusement —
+    // le chargement déclenché pour le nouveau jeu (voir switchGame) prendra
+    // le relais tout seul.
+    if(requestedGame!==currentGame) return;
     blocs=b; collections=c; cartes=ca; quantites=q;
     hydrateStoredPrices(prices);
     buildQuantitesIndex();
@@ -2755,7 +2787,7 @@ async function loadData(){
     loadWishlist();
     refreshMessagesBadge();
     loadNotifications();
-    saveToCache();
+    saveToCache(requestedGame);
     loadScanLearning(); // charger l'apprentissage du scan en arrière-plan
     // Les prix viennent de Supabase. Pas d'actualisation massive automatique au démarrage.
     if(activeTab==='vente') renderVente();
@@ -2769,7 +2801,9 @@ async function loadData(){
     adminDirty=true;
     if(activeTab==='admin'){ renderAdmin(); adminDirty=false; }
   } catch(e) {
-    if(!hasCache){
+    // Une erreur sur une requête devenue obsolète (jeu déjà changé depuis)
+    // ne doit pas afficher une page d'erreur par-dessus le nouveau jeu.
+    if(!hasCache && requestedGame===currentGame){
       document.getElementById('appBody').innerHTML=`<div style="padding:24px"><div style="background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);border-radius:12px;padding:20px;color:#ef4444;font-weight:700;">⚠️ Erreur de connexion à la base de données.<br><small style="opacity:0.8">${e.message}</small></div></div>`;
     }
   }
@@ -3465,6 +3499,11 @@ function collectionHasRarete(carteId, rarete){
   if(!carte) return true; // par sécurité
   const coll=collections.find(c=>c.id===carte.collection_id);
   if(!coll) return true;
+  // Gentle Mates n'a pas le système de variantes de Pokémon (pas de reverse,
+  // pas de pokéball/masterball) : chaque carte n'existe qu'en un seul
+  // exemplaire "physique", dont la rareté officielle (rarete_affichee,
+  // saisie à l'import) est affichée à la place du libellé générique "Commune".
+  if(carte.game_id==='gentlemates') return rarete==='c';
   // La Commune est toujours disponible
   if(rarete==='c') return true;
   // Donnée TCGdex fiable, quand on l'a : un print reverse existe ou non pour
