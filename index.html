@@ -1118,6 +1118,28 @@ function rareteBadgeInfo(rareteTcgdex){
   if(n==='rare') return {symbol:'★', bg:'#2b2b2b', fg:'#fff'};
   return null; // rareté pré-Écarlate/Violet ou inconnue : on garde l'ancien badge à lettre
 }
+// Même principe que rareteBadgeInfo, mais pour les raretés officielles de
+// Gentle Mates (texte libre saisi à l'import : Commune, Peu Commune, Rare,
+// Légendaire, Secrète, Autre = cartes Essence), qui n'ont rien à voir avec
+// le système de rareté Pokémon.
+function gentleMatesRareteBadgeInfo(rareteAffichee){
+  const n=String(rareteAffichee||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+  if(n==='secrete') return {symbol:'★★★', bg:'#c9a227', fg:'#2b2b2b'};
+  if(n==='legendaire') return {symbol:'★★', bg:'#7c3aed', fg:'#fff'};
+  if(n==='rare') return {symbol:'★', bg:'#2563eb', fg:'#fff'};
+  if(n==='peu commune') return {symbol:'◆', bg:'#16a34a', fg:'#fff'};
+  if(n==='commune') return {symbol:'●', bg:'#6b7280', fg:'#fff'};
+  if(n==='autre') return {symbol:'✦', bg:'#db2777', fg:'#fff'}; // cartes Essence
+  return null;
+}
+// Point d'entrée unique pour le badge (symbole + couleur) d'une carte,
+// quel que soit le jeu : évite de dupliquer le `if game_id==='gentlemates'`
+// dans chaque endroit qui affiche un badge de rareté.
+function cardRareteBadge(card){
+  if(!card) return null;
+  if(card.game_id==='gentlemates') return gentleMatesRareteBadgeInfo(card.rarete_affichee);
+  return rareteBadgeInfo(card.rarete_tcgdex);
+}
 function rareteDisplayLabel(card, t){
   if(t==='c' && card && card.rarete_affichee) return card.rarete_affichee;
   if(t==='c' && card && card.rarete_tcgdex && card.rarete_tcgdex!=='Inconnue') return card.rarete_tcgdex;
@@ -3020,13 +3042,12 @@ function updateTypeFilterOptions(cards){
 function buildBadges(container, carteId, viewOwner){
   const owners=viewOwner?[viewOwner]:OWNERS;
   const cardForBadges=cartes.find(c=>c.id===carteId);
-  const badgeInfo2=rareteBadgeInfo(cardForBadges&&cardForBadges.rarete_tcgdex);
-  const isGentleMates=cardForBadges&&cardForBadges.game_id==='gentlemates'&&cardForBadges.rarete_affichee;
+  const badgeInfo2=cardRareteBadge(cardForBadges);
   container.innerHTML=TYPES.map(t=>{
     const total=owners.reduce((s,o)=>s+getQuantite(carteId,o,t),0);
     if(total<=0) return '';
     const style=(t==='c'&&badgeInfo2)?` style="background:${badgeInfo2.bg};color:${badgeInfo2.fg};"`:'';
-    const label=(t==='c'&&isGentleMates)?'●':((t==='c'&&badgeInfo2)?badgeInfo2.symbol:t.toUpperCase());
+    const label=(t==='c'&&badgeInfo2)?badgeInfo2.symbol:t.toUpperCase();
     return `<div class="badge badge-${t}"${style}>${label} ${total}</div>`;
   }).join('');
 }
@@ -3620,19 +3641,23 @@ async function changeQty(carteId, joueur, rarete, delta){
 // Met à jour une seule ligne qty (appelé après changeQty)
 function renderQtyRow(row, carteId, joueur, rarete){
   const val=getQuantite(carteId,joueur,rarete);
-  // Gentle Mates : rareté officielle par carte (rarete_affichee), sinon
-  // cette ligne affichait toujours "Commune" quelle que soit la carte.
+  // Gentle Mates : rareté officielle par carte (rarete_affichee), avec son
+  // propre symbole/couleur — sinon cette ligne affichait toujours "C" gris
+  // + "Commune" quelle que soit la carte.
   const carteForLabel=cartes.find(c=>c.id===carteId);
   const label=rareteDisplayLabel(carteForLabel,rarete);
+  const badgeInfo=(rarete==='c')?cardRareteBadge(carteForLabel):null;
+  const badgeStyle=badgeInfo?`background:${badgeInfo.bg};color:${badgeInfo.fg};`:'';
+  const badgeSymbol=badgeInfo?badgeInfo.symbol:rarete.toUpperCase();
   if(val===0){
     row.innerHTML=`
       <button class="qty-add-btn" onclick="addRarete('${carteId}','${joueur}','${rarete}')">
         <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-        <span class="badge badge-${rarete}" style="margin:0 4px;">${rarete.toUpperCase()}</span>${label}
+        <span class="badge badge-${rarete}" style="margin:0 4px;${badgeStyle}">${badgeSymbol}</span>${label}
       </button>`;
   } else {
     row.innerHTML=`
-      <span class="qty-label"><span class="badge badge-${rarete}" style="margin-right:4px;">${rarete.toUpperCase()}</span>${label}</span>
+      <span class="qty-label"><span class="badge badge-${rarete}" style="margin-right:4px;${badgeStyle}">${badgeSymbol}</span>${label}</span>
       <div class="qty-controls">
         <button class="qty-btn" onclick="changeQty('${carteId}','${joueur}','${rarete}',-1)">−</button>
         <span class="qty-val" id="qv-${carteId}-${joueur}-${rarete}">${val}</span>
@@ -5951,11 +5976,11 @@ const RARETE_LABEL = { c:'Commune', r:'Reverse', p:'Pokéball', m:'Masterball' }
 // Une carte V/VMAX/EX (rareté 'c' faute de mieux) est étiquetée SPÉCIALE.
 function venteRarInfo(carte, rarete){
   if(rarete==='c'){
-    // Gentle Mates : rareté officielle par carte, saisie à l'import —
-    // prioritaire, sinon toutes ses cartes affichaient "Commune" par défaut.
-    if(carte && carte.rarete_affichee) return { label:'● '+carte.rarete_affichee, cls:'vente-rar-c' };
-    const info=rareteBadgeInfo(carte&&carte.rarete_tcgdex);
-    if(info) return { label:info.symbol+' '+carte.rarete_tcgdex, cls:'vente-rar-c', style:'background:'+info.bg+';color:'+info.fg+';' };
+    const info=cardRareteBadge(carte);
+    if(info){
+      const label=(carte.game_id==='gentlemates')?carte.rarete_affichee:carte.rarete_tcgdex;
+      return { label:info.symbol+' '+label, cls:'vente-rar-c', style:'background:'+info.bg+';color:'+info.fg+';' };
+    }
     if(cardExceedsSet(carte)) return { label:'Secrète', cls:'vente-rar-s' };
     if(cardIsSpecial(carte))  return { label:'Spéciale', cls:'vente-rar-x' };
   }
