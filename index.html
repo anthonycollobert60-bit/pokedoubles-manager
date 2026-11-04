@@ -2094,6 +2094,9 @@ async function doSignup(){
   }catch(e){ showLoginError('Inscription impossible : '+e.message); }
 }
 function loginAsVisitor(){
+  // Onglet Vente en refonte : accès temporairement désactivé
+  showToast('🛒 Vente : bientôt disponible');
+  return;
   clearAuthSession();
   currentUser=null; selectedUser='visitor'; currentAuthEmail='';
   enterApp();
@@ -2246,6 +2249,8 @@ function updateCurrentTabLabel(tab){
 
 function switchTab(tab){
   closeNotificationCenter();
+  // Onglet Vente en refonte : on affiche « bientôt disponible » au lieu d'ouvrir l'onglet
+  if(tab==='vente'){ closeAppMenu(); showToast('🛒 Vente : bientôt disponible'); return; }
   if(tab==='messages') currentChatFriend='';
   if(!currentUser && tab!=='vente') tab='vente';
   if(currentUser && !['anthony','valentin'].includes(currentUser) && tab==='vente') tab='collection';
