@@ -1126,7 +1126,8 @@ function gentleMatesRareteBadgeInfo(rareteAffichee){
   const n=String(rareteAffichee||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
   if(n==='secrete') return {symbol:'★★★', bg:'#c9a227', fg:'#2b2b2b'};
   if(n==='legendaire') return {symbol:'★★', bg:'#7c3aed', fg:'#fff'};
-  if(n==='rare') return {symbol:'★', bg:'#2563eb', fg:'#fff'};
+  if(n==='epique') return {symbol:'★', bg:'#ea580c', fg:'#fff'};
+  if(n==='rare') return {symbol:'◆◆', bg:'#2563eb', fg:'#fff'};
   if(n==='peu commune') return {symbol:'◆', bg:'#16a34a', fg:'#fff'};
   if(n==='commune') return {symbol:'●', bg:'#6b7280', fg:'#fff'};
   if(n==='autre') return {symbol:'✦', bg:'#db2777', fg:'#fff'}; // cartes Essence
