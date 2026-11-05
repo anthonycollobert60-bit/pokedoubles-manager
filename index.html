@@ -8038,6 +8038,7 @@ async function marketFormSubmit(){
   if(!marketForm || !currentUser) return;
   const c=cartes.find(x=>String(x.id)===marketForm.carteId);
   if(!c) return;
+  const a=marketForm.annonce;
   const rarete=document.getElementById('mfRarete').value;
   const etat=document.getElementById('mfEtat').value;
   const qty=parseInt(document.getElementById('mfQty').value);
@@ -8052,7 +8053,6 @@ async function marketFormSubmit(){
   }
   if(!(prix>=0)){ showToast('Indique un prix'); return; }
   const now=new Date().toISOString();
-  const a=marketForm.annonce;
   try{
     if(a){
       await sbPatch('ventes_annonces','?id=eq.'+encodeURIComponent(a.id),{rarete,etat,quantite:qty,prix,commentaire:com,visibilite:vis,updated_at:now});
