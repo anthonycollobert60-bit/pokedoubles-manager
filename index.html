@@ -7679,7 +7679,7 @@ function doGlobalSearch(){
    en vente la carte (voir marketNotifyWishers). */
 // Phase de test : seul MARKET_BETA_OWNER accède à l'onglet Vente. Pour ouvrir à
 // tout le monde, passer MARKET_BETA à false.
-const MARKET_BETA=true;
+const MARKET_BETA=false;
 const MARKET_BETA_USERS=['anthony','t28505165@gmail.com'];   // Anthony + compte test (ajouter 'valentin' pour le laisser tester)
 function marketAllowed(){ return !MARKET_BETA || (!!currentUser && MARKET_BETA_USERS.includes(profileKey(currentUser))); }
 const MARKET_ETATS=[['neuf','Neuf'],['excellent','Excellent'],['bon','Bon'],['joue','Joué'],['abime','Abîmé']];
@@ -7821,8 +7821,8 @@ function marketCardHtml(x){
       <button class="market-btn" onclick="marketMarkSold('${a.id}')">✓ Vendue</button>
       <button class="market-btn danger" onclick="marketRemove('${a.id}')">🗑️</button>`;
   }else if(!currentUser){
-    actions=`<button class="market-btn" onclick="showToast('Crée un compte ou connecte-toi pour acheter ou contacter le vendeur')">🛒 Acheter</button>
-      <button class="market-btn" onclick="showToast('Crée un compte ou connecte-toi pour contacter le vendeur')">💬 Contacter</button>`;
+    actions=`<button class="market-btn primary" onclick="marketGuestPrompt()">🛒 Acheter</button>
+      <button class="market-btn" onclick="marketGuestPrompt()">💬 Contacter</button>`;
   }else{
     const inCart=parseInt(marketCart[a.id])||0;
     actions=(avail>0?`<button class="market-btn primary" onclick="marketCartAdd('${a.id}')">🛒 ${inCart?'Panier ('+inCart+') +':'Ajouter au panier'}</button>`:`<span class="vente-rar vente-rar-c">Réservée</span>`)+
@@ -7947,7 +7947,7 @@ function marketSetScope(s){ marketScope=s; renderVente(); }
 /* ── Mise en vente / modification ─────────────────────────────── */
 function openMarketForm(carteId, annonceId){
   if(!marketAllowed()){ showToast('🛒 Vente : bientôt disponible'); return; }
-  if(!currentUser){ showToast('Connecte-toi pour vendre une carte'); return; }
+  if(!currentUser){ marketGuestPrompt(); return; }
   const annonce=annonceId?marketListings.find(a=>String(a.id)===String(annonceId)):null;
   marketForm={carteId:carteId?String(carteId):'', annonce:annonce||null, q:''};
   if(typeof closeModal==='function' && document.getElementById('modal')?.style.display==='block') closeModal();
@@ -8177,8 +8177,9 @@ async function marketRemove(id){
 
 /* ── Contacter un vendeur (messagerie existante, réservée aux amis) ── */
 async function marketContact(id){
+  if(!currentUser){ marketGuestPrompt(); return; }
   const a=marketListings.find(x=>String(x.id)===String(id));
-  if(!a || !currentUser) return;
+  if(!a) return;
   const seller=profileKey(a.seller_key);
   const card=cartes.find(c=>String(c.id)===String(a.carte_id));
   const ri=card?venteRarInfo(card,a.rarete):{label:a.rarete};
@@ -8199,7 +8200,7 @@ async function marketContact(id){
   }catch(e){ showToast('❌ '+e.message); }
 }
 async function marketAddFriend(key){
-  if(!currentUser){ showToast('Connecte-toi'); return; }
+  if(!currentUser){ marketGuestPrompt(); return; }
   const me=marketMe(), to=profileKey(key);
   if(!to || to===me) return;
   if(friendRequests.some(r=>profileKey(r.from_key)===me && profileKey(r.to_key)===to && r.status==='pending')){
@@ -8279,8 +8280,24 @@ function marketAvailable(a,excludeOrderId){
 
 /* ── Panier ───────────────────────────────────────────────────── */
 function marketCartCount(){ return Object.values(marketCart).reduce((s,n)=>s+(parseInt(n)||0),0); }
+/* Visiteur sans compte : invitation à créer un compte pour acheter / contacter */
+function marketGuestPrompt(){
+  document.getElementById('marketGuestOverlay')?.remove();
+  const ov=document.createElement('div');
+  ov.id='marketGuestOverlay';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:2147483001;display:flex;align-items:center;justify-content:center;padding:16px;';
+  ov.onclick=e=>{ if(e.target===ov) ov.remove(); };
+  ov.innerHTML=`<div style="background:var(--bg2);width:100%;max-width:380px;border-radius:16px;padding:20px;text-align:center;">
+    <div style="font-size:34px;margin-bottom:6px;">🔒</div>
+    <div style="font-weight:900;font-size:17px;margin-bottom:8px;">Crée un compte pour contacter le vendeur</div>
+    <div class="vente-meta" style="white-space:normal;margin-bottom:16px;">Il faut un compte pour acheter une carte ou écrire à un vendeur. C'est gratuit et rapide.</div>
+    <button class="btn-primary" onclick="document.getElementById('marketGuestOverlay').remove();doLogout();">Créer un compte / Se connecter</button>
+    <button class="btn-secondary" style="margin-top:8px;" onclick="document.getElementById('marketGuestOverlay').remove()">Continuer à parcourir</button>
+  </div>`;
+  document.body.appendChild(ov);
+}
 function marketCartAdd(id){
-  if(!currentUser){ showToast('Crée un compte ou connecte-toi pour acheter'); return; }
+  if(!currentUser){ marketGuestPrompt(); return; }
   const a=marketListings.find(x=>String(x.id)===String(id));
   if(!a) return;
   if(profileKey(a.seller_key)===marketMe()){ showToast('C\'est ta propre annonce'); return; }
@@ -8694,6 +8711,7 @@ function renderMarketSeller(){
     <div style="display:flex;gap:8px;margin-bottom:12px;">
       ${stat(rows.length,'annonces')}${stat(nbCards,'cartes dispo')}${stat(nbSwap,'échanges')}${stat(marketSellerSales[key]!==undefined?marketSellerSales[key]:'…','ventes conclues','msSales')}
     </div>
+    ${(!isMe&&!currentUser)?`<div class="market-actions" style="margin:0 0 12px;"><button class="market-btn primary" onclick="marketGuestPrompt()">💬 Contacter</button></div>`:''}
     ${(!isMe&&currentUser)?`<div class="market-actions" style="margin:0 0 12px;"><button class="market-btn primary" onclick="marketOpenChat('${esc(key)}')">💬 Contacter</button>${isFriend?'':`<button class="market-btn" onclick="marketAddFriend('${esc(key)}')">👥 Ajouter en ami</button>`}</div>`:''}
     <div class="vente-list">${rows.length?rows.map(marketCardHtml).join(''):'<div style="text-align:center;color:var(--text2);padding:30px;font-size:14px;">Aucune annonce visible pour le moment.</div>'}</div>`;
   marketLoadSellerSales(key);
