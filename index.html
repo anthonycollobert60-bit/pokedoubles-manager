@@ -7680,7 +7680,7 @@ function doGlobalSearch(){
 // Phase de test : seul MARKET_BETA_OWNER accède à l'onglet Vente. Pour ouvrir à
 // tout le monde, passer MARKET_BETA à false.
 const MARKET_BETA=true;
-const MARKET_BETA_USERS=['anthony'];   // ajouter 'valentin' ici pour le laisser tester
+const MARKET_BETA_USERS=['anthony','t28505165@gmail.com'];   // Anthony + compte test (ajouter 'valentin' pour le laisser tester)
 function marketAllowed(){ return !MARKET_BETA || (!!currentUser && MARKET_BETA_USERS.includes(profileKey(currentUser))); }
 const MARKET_ETATS=[['neuf','Neuf'],['excellent','Excellent'],['bon','Bon'],['joue','Joué'],['abime','Abîmé']];
 function marketEtatLabel(k){ const f=MARKET_ETATS.find(e=>e[0]===k); return f?f[1]:''; }
