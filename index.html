@@ -7693,6 +7693,9 @@ let marketSortKey='recent';
 let marketQuery='';
 let marketForm=null;          // {carteId, annonce, q}
 let marketCartUser=null;
+let marketDateFilter='all';     // all | 1 | 7 | 30 (jours)
+let marketSellerKey='';
+let marketSellerSales={};
 
 function marketMe(){ return currentUser?profileKey(currentUser):''; }
 function marketIsFriend(key){ const k=profileKey(key); return (userFriends||[]).some(f=>profileKey(f.friend_key)===k); }
@@ -7736,6 +7739,18 @@ function marketFormMergeNote(){
   const ex=marketFindMine(marketForm.carteId,r);
   el.innerHTML=ex?`🔗 Tu as déjà ${parseInt(ex.quantite)||0} en vente à ${(parseFloat(ex.prix)||0).toFixed(2)} € : la quantité sera ajoutée à cette annonce (prix et état inchangés).`:'';
 }
+function marketAgo(d){
+  const t=new Date(d||0).getTime();
+  if(!t) return '';
+  const m=Math.floor((Date.now()-t)/60000);
+  if(m<2) return 'à l\'instant';
+  if(m<60) return 'il y a '+m+' min';
+  const h=Math.floor(m/60);
+  if(h<24) return 'il y a '+h+' h';
+  const j=Math.floor(h/24);
+  if(j<30) return 'il y a '+j+' j';
+  return new Date(t).toLocaleDateString('fr-FR');
+}
 function marketRarRank(c,rarete){
   if(cardExceedsSet(c)) return 11;
   if(cardIsSpecial(c)) return 10;
@@ -7760,7 +7775,12 @@ function marketRows(){
   if(marketScope==='friends') rows=rows.filter(x=>me && profileKey(x.a.seller_key)!==me && marketIsFriend(x.a.seller_key));
   else if(marketScope==='wish') rows=rows.filter(x=>marketIsWished(x.a));
   else if(marketScope==='mine') rows=rows.filter(x=>profileKey(x.a.seller_key)===me);
+  else if(marketScope==='swap') rows=rows.filter(x=>!!x.a.echange);
   if(marketEtatFilter!=='all') rows=rows.filter(x=>x.a.etat===marketEtatFilter);
+  if(marketDateFilter!=='all'){
+    const limit=Date.now()-parseInt(marketDateFilter)*86400000;
+    rows=rows.filter(x=>new Date(x.a.created_at||0).getTime()>=limit);
+  }
   rows=rows.filter(x=>marketMatchesRar(x.card,x.a));
   if(q){
     rows=rows.filter(x=>{
@@ -7777,6 +7797,7 @@ function marketRows(){
     case 'price_desc': rows.sort((a,b)=>price(b)-price(a)||time(b)-time(a)); break;
     case 'rare_desc': rows.sort((a,b)=>marketRarRank(b.card,b.a.rarete)-marketRarRank(a.card,a.a.rarete)||price(b)-price(a)); break;
     case 'name': rows.sort((a,b)=>(a.card.nom||'').localeCompare(b.card.nom||'','fr')); break;
+    case 'oldest': rows.sort((a,b)=>time(a)-time(b)); break;
     default: rows.sort((a,b)=>time(b)-time(a));
   }
   return rows;
@@ -7818,7 +7839,8 @@ function marketCardHtml(x){
         <span class="vente-stock">x${avail}${reserved>0?' · '+reserved+' réservé'+(reserved>1?'s':''):''}</span>
         ${sugg>0?`<span class="vente-stock" title="Prix CardMarket">(cote ${sugg.toFixed(2)} €)</span>`:''}
       </div>
-      <div class="market-seller">${effectiveUserAvatar(sellerKey,18)} ${esc(effectiveUserLabel(sellerKey))} <span title="${a.visibilite==='friends'?'Visible par les amis':'Visible par tous'}">${a.visibilite==='friends'?'👥':'🌍'}</span></div>
+      ${a.echange?`<div style="margin-top:4px;"><span class="vente-rar" style="background:rgba(34,197,94,.18);color:#22c55e;">🔄 Échange possible</span></div>`:''}
+      <div class="market-seller" style="cursor:pointer;" onclick="marketOpenSeller('${esc(sellerKey)}')" title="Voir le profil vendeur">${effectiveUserAvatar(sellerKey,18)} <span style="text-decoration:underline;">${esc(effectiveUserLabel(sellerKey))}</span> <span title="${a.visibilite==='friends'?'Visible par les amis':'Visible par tous'}">${a.visibilite==='friends'?'👥':'🌍'}</span> <span style="font-weight:600;opacity:.8;">· ${esc(marketAgo(a.created_at))}</span></div>
       ${a.commentaire?`<div class="vente-meta" style="white-space:normal;margin-top:3px;">💬 ${esc(a.commentaire)}</div>`:''}
       <div class="market-actions">${actions}</div>
     </div>
@@ -7844,6 +7866,11 @@ function renderVente(){
       <button class="market-chip${marketView==='list'?' active':''}" onclick="marketSetView('list')">🏷️ Annonces</button>
       <button class="market-chip${marketView==='orders'?' active':''}" onclick="marketSetView('orders')">📥 Demandes${todo?` <b style="background:#ef4444;color:#fff;border-radius:999px;padding:0 6px;">${todo}</b>`:''}</button>
     </div>`:'';
+  if(marketView==='seller' && marketSellerKey){
+    body.innerHTML=`<div class="vente-wrap">${viewTabs}<div id="marketSellerBox"></div></div>`;
+    renderMarketSeller();
+    return;
+  }
   if(marketView==='orders' && currentUser){
     body.innerHTML=`<div class="vente-wrap">${viewTabs}<div id="marketOrdersBox"></div></div>`;
     renderMarketOrders();
@@ -7863,6 +7890,7 @@ function renderVente(){
       ${marketChip('all','Toutes',null)}
       ${currentUser?marketChip('friends','👥 Amis',null):''}
       ${currentUser?marketChip('wish','❤️ Mes favoris',nbWish):''}
+      ${marketChip('swap','🔄 Échange',visible.filter(a=>a.echange).length)}
       ${currentUser?marketChip('mine','🏷️ Mes annonces',nbMine):''}
     </div>
     <div style="display:flex;gap:8px;margin-bottom:8px;">
@@ -7871,9 +7899,16 @@ function renderVente(){
         <option value="all">Tous états</option>${MARKET_ETATS.map(e=>`<option value="${e[0]}"${marketEtatFilter===e[0]?' selected':''}>${e[1]}</option>`).join('')}
       </select>
     </div>
-    <div style="margin-bottom:12px;">
-      <select id="marketSortSelect" onchange="marketOnSort(this.value)" style="width:100%;padding:9px 12px;border-radius:10px;border:1.5px solid var(--border);background:var(--bg);color:var(--text);font-size:13px;font-weight:600;">
+    <div style="display:flex;gap:8px;margin-bottom:12px;">
+      <select id="marketDateSelect" onchange="marketOnDate(this.value)" style="flex:1;min-width:0;padding:9px 10px;border-radius:10px;border:1.5px solid var(--border);background:var(--bg);color:var(--text);font-size:13px;font-weight:600;">
+        <option value="all">Toutes dates</option>
+        <option value="1"${marketDateFilter==='1'?' selected':''}>Dernières 24 h</option>
+        <option value="7"${marketDateFilter==='7'?' selected':''}>7 derniers jours</option>
+        <option value="30"${marketDateFilter==='30'?' selected':''}>30 derniers jours</option>
+      </select>
+      <select id="marketSortSelect" onchange="marketOnSort(this.value)" style="flex:1.6;min-width:0;padding:9px 12px;border-radius:10px;border:1.5px solid var(--border);background:var(--bg);color:var(--text);font-size:13px;font-weight:600;">
         <option value="recent"${marketSortKey==='recent'?' selected':''}>Plus récentes d'abord</option>
+        <option value="oldest"${marketSortKey==='oldest'?' selected':''}>Plus anciennes d'abord</option>
         <option value="price_asc"${marketSortKey==='price_asc'?' selected':''}>Prix croissant</option>
         <option value="price_desc"${marketSortKey==='price_desc'?' selected':''}>Prix décroissant</option>
         <option value="rare_desc"${marketSortKey==='rare_desc'?' selected':''}>Plus rares d'abord</option>
@@ -7898,6 +7933,7 @@ function marketRenderList(){
   if(marketScope==='wish') empty='Aucune annonce pour tes cartes favorites (❤️) pour l\'instant. Tu seras notifié dès qu\'une est mise en vente.';
   else if(marketScope==='mine') empty='Tu n\'as aucune annonce. Appuie sur « Ajouter une carte à vendre ».';
   else if(marketScope==='friends') empty='Tes amis n\'ont aucune annonce pour le moment.';
+  else if(marketScope==='swap') empty='Aucune annonce avec échange possible pour le moment.';
   list.innerHTML=rows.length?rows.map(marketCardHtml).join(''):`<div style="text-align:center;color:var(--text2);padding:30px;font-size:14px;">${empty}</div>`;
 }
 
@@ -7905,6 +7941,7 @@ function marketOnSearch(v){ marketQuery=v; marketRenderList(); }
 function marketOnRar(v){ venteRarFilter=v; marketRenderList(); }
 function marketOnEtat(v){ marketEtatFilter=v; marketRenderList(); }
 function marketOnSort(v){ marketSortKey=v; marketRenderList(); }
+function marketOnDate(v){ marketDateFilter=v; marketRenderList(); }
 function marketSetScope(s){ marketScope=s; renderVente(); }
 
 /* ── Mise en vente / modification ─────────────────────────────── */
@@ -7974,6 +8011,7 @@ function marketFormRender(){
     <div id="mfMerge" class="vente-meta" style="margin-top:6px;color:var(--accent2);font-weight:700;"></div>
     <label style="${lbl}">Commentaire (optionnel)</label>
     <input id="mfCom" type="text" maxlength="140" value="${esc(a?.commentaire||'')}" placeholder="Ex : remise en main propre, échange possible…" style="${inp}">
+    <label style="display:flex;align-items:center;gap:8px;margin:12px 0 0;font-size:14px;font-weight:800;cursor:pointer;"><input id="mfEchange" type="checkbox" ${a&&a.echange?'checked':''} style="width:18px;height:18px;accent-color:var(--accent2);"> 🔄 Échange possible</label>
     <label style="${lbl}">Visible par</label>
     <select id="mfVis" style="${inp}">
       <option value="public"${(a?a.visibilite:'public')==='public'?' selected':''}>🌍 Tout le monde</option>
@@ -8041,6 +8079,7 @@ async function marketFormSubmit(){
   const prix=parseFloat(String(document.getElementById('mfPrix').value).replace(',','.'));
   const com=(document.getElementById('mfCom').value||'').trim();
   const vis=document.getElementById('mfVis').value==='friends'?'friends':'public';
+  const echange=!!document.getElementById('mfEchange')?.checked;
   if(!(qty>=1)){ showToast('Quantité invalide'); return; }
   const qmax=marketQtyMax(c.id,rarete,a?a.id:null);
   if(qty>qmax){
@@ -8051,8 +8090,10 @@ async function marketFormSubmit(){
   const now=new Date().toISOString();
   try{
     if(a){
-      await sbPatch('ventes_annonces','?id=eq.'+encodeURIComponent(a.id),{rarete,etat,quantite:qty,prix,commentaire:com,visibilite:vis,updated_at:now});
-      Object.assign(a,{rarete,etat,quantite:qty,prix,commentaire:com,visibilite:vis});
+      const upd={rarete,etat,quantite:qty,prix,commentaire:com,visibilite:vis,updated_at:now};
+      if(echange || a.echange!==undefined) upd.echange=echange;      // colonne ajoutée par ventes_annonces_echange.sql
+      await sbPatch('ventes_annonces','?id=eq.'+encodeURIComponent(a.id),upd);
+      Object.assign(a,upd);
       showToast('✅ Annonce modifiée');
     }else if(marketFindMine(c.id,rarete)){
       const ex=marketFindMine(c.id,rarete);
@@ -8062,6 +8103,7 @@ async function marketFormSubmit(){
       showToast('✅ +'+qty+' ajouté à ton annonce existante ('+nq+' au total)');
     }else{
       const row={seller_key:marketMe(),carte_id:String(c.id),rarete,etat,quantite:qty,prix,commentaire:com,visibilite:vis,statut:'active',created_at:now,updated_at:now};
+      if(echange) row.echange=true;
       const res=await sbPost('ventes_annonces',row);
       const saved=Array.isArray(res)&&res[0]?res[0]:row;
       marketListings.unshift(saved);
@@ -8613,6 +8655,49 @@ function renderMarketOrders(){
     :'<div style="text-align:center;color:var(--text2);padding:30px;font-size:14px;">Aucune demande pour le moment.<br>Ajoute des cartes au panier depuis les annonces.</div>');
 }
 function marketSetView(v){ marketView=v; renderVente(); }
+function marketOpenSeller(key){
+  marketSellerKey=profileKey(key);
+  marketView='seller';
+  renderVente();
+  const body=document.getElementById('venteBody'); if(body) body.scrollTop=0;
+  window.scrollTo&&window.scrollTo(0,0);
+}
+async function marketLoadSellerSales(key){
+  if(marketSellerSales[key]!==undefined) return;
+  try{
+    const rows=await sbGet('ventes_commandes','?select=id&seller_key=eq.'+encodeURIComponent(key)+'&statut=eq.completed');
+    marketSellerSales[key]=Array.isArray(rows)?rows.length:0;
+  }catch(e){ marketSellerSales[key]=0; }
+  const el=document.getElementById('msSales');
+  if(el && marketSellerKey===key) el.textContent=marketSellerSales[key];
+}
+function renderMarketSeller(){
+  const box=document.getElementById('marketSellerBox');
+  if(!box) return;
+  const key=marketSellerKey, me=marketMe();
+  const byId=new Map(cartes.map(c=>[String(c.id),c]));
+  const rows=marketListings.filter(a=>profileKey(a.seller_key)===key && marketCanSee(a))
+    .map(a=>({a,card:byId.get(String(a.carte_id))})).filter(x=>x.card)
+    .sort((x,y)=>new Date(y.a.created_at||0)-new Date(x.a.created_at||0));
+  const nbCards=rows.reduce((s,x)=>s+marketAvailable(x.a),0);
+  const nbSwap=rows.filter(x=>x.a.echange).length;
+  const isMe=key===me, isFriend=!isMe && marketIsFriend(key);
+  const stat=(v,l,id)=>`<div style="flex:1;text-align:center;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:10px 4px;"><div style="font-weight:900;font-size:18px;font-family:'Space Mono',monospace;"${id?` id="${id}"`:''}>${v}</div><div class="vente-meta" style="white-space:normal;">${l}</div></div>`;
+  box.innerHTML=`<button class="market-btn" style="margin-bottom:10px;" onclick="marketSetView('list')">← Retour aux annonces</button>
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+      <div style="flex-shrink:0;">${effectiveUserAvatar(key,56)}</div>
+      <div style="min-width:0;">
+        <div style="font-weight:900;font-size:18px;">${esc(effectiveUserLabel(key))}</div>
+        <div class="vente-meta">${isMe?'C\'est toi':(isFriend?'👥 Dans tes amis':'Vendeur de la communauté')}</div>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:12px;">
+      ${stat(rows.length,'annonces')}${stat(nbCards,'cartes dispo')}${stat(nbSwap,'échanges')}${stat(marketSellerSales[key]!==undefined?marketSellerSales[key]:'…','ventes conclues','msSales')}
+    </div>
+    ${(!isMe&&currentUser)?`<div class="market-actions" style="margin:0 0 12px;"><button class="market-btn primary" onclick="marketOpenChat('${esc(key)}')">💬 Contacter</button>${isFriend?'':`<button class="market-btn" onclick="marketAddFriend('${esc(key)}')">👥 Ajouter en ami</button>`}</div>`:''}
+    <div class="vente-list">${rows.length?rows.map(marketCardHtml).join(''):'<div style="text-align:center;color:var(--text2);padding:30px;font-size:14px;">Aucune annonce visible pour le moment.</div>'}</div>`;
+  marketLoadSellerSales(key);
+}
 
 /* Rafraîchissement régulier de l'onglet Vente (réservations, nouvelles demandes) */
 setInterval(async()=>{
