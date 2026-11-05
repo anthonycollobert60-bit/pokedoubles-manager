@@ -333,6 +333,15 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--text);heig
 .vente-qbtn{width:32px;height:32px;border-radius:8px;border:1.5px solid var(--border);background:var(--bg);color:var(--text);font-size:18px;font-weight:900;cursor:pointer;display:flex;align-items:center;justify-content:center}
 .vente-qnum{min-width:22px;text-align:center;font-weight:900;font-family:'Space Mono',monospace}
 .vente-cartbar{position:fixed;left:50%;transform:translateX(-50%);bottom:16px;width:calc(100% - 32px);max-width:560px;background:var(--accent2);color:#fff;border-radius:14px;padding:14px 18px;display:flex;justify-content:space-between;align-items:center;font-weight:800;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,0.3);z-index:50}
+.market-seller{display:flex;align-items:center;gap:5px;font-size:12px;font-weight:700;color:var(--text2);margin-top:4px}
+.market-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.market-btn{padding:7px 11px;border-radius:9px;border:1.5px solid var(--border);background:var(--bg);color:var(--text);font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap}
+.market-btn.primary{border-color:var(--accent2);color:var(--accent2)}
+.market-btn.danger{border-color:#ef4444;color:#ef4444}
+.market-chips{display:flex;gap:6px;overflow-x:auto;margin-bottom:8px;padding-bottom:2px}
+.market-chip{flex-shrink:0;padding:7px 12px;border-radius:999px;border:1.5px solid var(--border);background:var(--surface);color:var(--text);font-size:12px;font-weight:800;cursor:pointer}
+.market-chip.active{background:var(--accent2);border-color:var(--accent2);color:#fff}
+.market-banner{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:10px 12px;font-size:13px;margin-bottom:10px}
 .vente-cartbar-right{font-family:'Space Mono',monospace}
 .vc-line{display:flex;align-items:center;gap:10px}
 .vc-line img{width:38px;height:53px;object-fit:cover;border-radius:6px;background:var(--bg);flex-shrink:0}
@@ -1731,6 +1740,7 @@ let unreadMessagesCount = 0;
 let appNotifications = [];
 let unreadNotificationCount = 0;
 let userWishlist = new Set();
+let userWishlistRar = {}; // { carteId: Set(raretes) } — '' = toutes versions (favori posé depuis cette app)
 
 function profileKey(user){
   return String(user||'').toLowerCase();
@@ -2094,9 +2104,6 @@ async function doSignup(){
   }catch(e){ showLoginError('Inscription impossible : '+e.message); }
 }
 function loginAsVisitor(){
-  // Onglet Vente en refonte : accès temporairement désactivé
-  showToast('🛒 Vente : bientôt disponible');
-  return;
   clearAuthSession();
   currentUser=null; selectedUser='visitor'; currentAuthEmail='';
   enterApp();
@@ -2174,7 +2181,7 @@ function enterApp(){
   document.getElementById('tabMessages').style.display = currentUser ? '' : 'none';
   document.getElementById('tabReports').style.display = currentUser ? '' : 'none';
   document.getElementById('tabUpdates').style.display = currentUser ? '' : 'none';
-  document.getElementById('tabVente').style.display = (!currentUser || currentUser==='anthony' || currentUser==='valentin') ? '' : 'none';
+  document.getElementById('tabVente').style.display = '';
   switchTab(currentUser ? 'profile' : 'vente');
   loadData();
   loadUserProfiles();
@@ -2249,11 +2256,9 @@ function updateCurrentTabLabel(tab){
 
 function switchTab(tab){
   closeNotificationCenter();
-  // Onglet Vente en refonte : on affiche « bientôt disponible » au lieu d'ouvrir l'onglet
-  if(tab==='vente'){ closeAppMenu(); showToast('🛒 Vente : bientôt disponible'); return; }
+
   if(tab==='messages') currentChatFriend='';
   if(!currentUser && tab!=='vente') tab='vente';
-  if(currentUser && !['anthony','valentin'].includes(currentUser) && tab==='vente') tab='collection';
   if(currentUser!=='anthony' && (tab==='admin' || tab==='history')) tab=currentUser?'collection':'vente';
   // Couper la caméra si on quitte l'onglet Scan
   if(activeTab==='scan' && tab!=='scan'){ stopScanCam(); }
@@ -3257,7 +3262,7 @@ function fillModal(carteId){
       actionBar.style.cssText='display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin:8px 0;';
       modalPriceEl.parentNode.insertBefore(actionBar, modalPriceEl);
     }
-    actionBar.innerHTML=`${currentUser?`<button class="btn-sm" onclick="shareCurrentCardToChat('${carteId}')">💬 Montrer à un ami</button>`:''}`;
+    actionBar.innerHTML=`${currentUser?`<button class="btn-sm" onclick="openMarketForm('${carteId}')">🏷️ Mettre en vente</button>`:''}${currentUser?`<button class="btn-sm" onclick="shareCurrentCardToChat('${carteId}')">💬 Montrer à un ami</button>`:''}`;
   }
 
   // Prix CardMarket (ou prix manuel s'il existe). Bouton de correction côté Anthony.
@@ -4163,11 +4168,18 @@ async function deleteMyAccount(){
 
 async function loadWishlist(){
   userWishlist=new Set();
+  userWishlistRar={};
   if(!currentUser) return;
   try{
-    const rows=await sbGet('card_wishlist','?select=carte_id&user_key=eq.'+encodeURIComponent(profileKey(currentUser)));
-    (rows||[]).forEach(r=>{ if(r.carte_id) userWishlist.add(String(r.carte_id)); });
+    const rows=await sbGet('card_wishlist','?select=carte_id,rarete&user_key=eq.'+encodeURIComponent(profileKey(currentUser)));
+    (rows||[]).forEach(r=>{
+      if(!r.carte_id) return;
+      const id=String(r.carte_id);
+      userWishlist.add(id);
+      (userWishlistRar[id]=userWishlistRar[id]||new Set()).add(r.rarete||'');
+    });
   }catch(e){}
+  if(activeTab==='vente' && marketLoaded) renderVente();
 }
 function isWishlisted(carteId){ return userWishlist.has(String(carteId)); }
 async function toggleWishlist(carteId, ev){
@@ -4176,12 +4188,15 @@ async function toggleWishlist(carteId, ev){
   const id=String(carteId);
   if(isWishlisted(id)){
     userWishlist.delete(id);
+    delete userWishlistRar[id];
     try{ await sbDel('card_wishlist','?user_key=eq.'+encodeURIComponent(profileKey(currentUser))+'&carte_id=eq.'+encodeURIComponent(id)); }catch(e){}
     showToast('♡ Retirée des souhaits');
   }else{
     userWishlist.add(id);
+    userWishlistRar[id]=new Set(['']);
     try{ await sbPost('card_wishlist',{user_key:profileKey(currentUser).toLowerCase(),carte_id:id,created_at:new Date().toISOString()}); }catch(e){}
     showToast('❤️ Ajoutée aux souhaits');
+    if(marketLoaded) marketCheckWishedNow(id);
   }
   refreshWishlistButtons();
   applyFilters();
@@ -4459,6 +4474,7 @@ function notificationIcon(type){
   if(type==='transfer_received') return '🔄';
   if(type==='message') return '💬';
   if(type==='vente_request') return '🛒';
+  if(type==='vente_wishlist') return '❤️';
   return '🔔';
 }
 function renderNotificationCenter(){
@@ -4486,6 +4502,7 @@ async function openNotification(id,type){
   else if(type==='transfer_received') switchTab('transfer');
   else if(type==='message') switchTab('messages');
   else if(type==='vente_request') switchTab('vente');
+  else if(type==='vente_wishlist'){ marketScope='wish'; switchTab('vente'); }
 }
 async function markNotificationsRead(){
   if(!currentUser) return;
@@ -6018,7 +6035,7 @@ function ventePrice(carteId, rarete){
 }
 
 
-function renderVente(){
+function renderVenteLegacy(){
   const body=document.getElementById('venteBody');
   if(!body) return;
   let list=venteCards(); // lignes {card, rarete, qty}
@@ -7695,6 +7712,442 @@ function doGlobalSearch(){
     };
   });
 }
+
+/* ══ MARKETPLACE COMMUNAUTAIRE (onglet Vente) ═════════════════════════
+   Chaque membre peut mettre en vente ses cartes (table ventes_annonces).
+   Visibilité par annonce : 'public' (tout le monde, visiteurs inclus) ou
+   'friends' (amis du vendeur seulement). Les visiteurs sans compte peuvent
+   seulement consulter. Les cartes "recherchées" (card_wishlist, partagée
+   avec l'app collection) déclenchent une notification quand un vendeur met
+   en vente la carte (voir marketNotifyWishers). */
+const MARKET_ETATS=[['neuf','Neuf'],['excellent','Excellent'],['bon','Bon'],['joue','Joué'],['abime','Abîmé']];
+function marketEtatLabel(k){ const f=MARKET_ETATS.find(e=>e[0]===k); return f?f[1]:''; }
+
+let marketListings=[];
+let marketLoaded=false;
+let marketScope='all';        // all | friends | wish | mine
+let marketEtatFilter='all';
+let marketSortKey='recent';
+let marketQuery='';
+let marketForm=null;          // {carteId, annonce, q}
+
+function marketMe(){ return currentUser?profileKey(currentUser):''; }
+function marketIsFriend(key){ return chatFriends().includes(profileKey(key)); }
+function marketCanSee(a){
+  const me=marketMe();
+  if(me && profileKey(a.seller_key)===me) return true;
+  if(a.visibilite==='friends') return !!me && marketIsFriend(a.seller_key);
+  return true;
+}
+function marketIsWished(a){
+  const s=userWishlistRar[String(a.carte_id)];
+  if(!s) return false;
+  return s.has('') || s.has(a.rarete);
+}
+
+async function loadMarket(){
+  try{
+    const rows=await sbGet('ventes_annonces','?select=*&statut=eq.active&quantite=gt.0&order=created_at.desc');
+    marketListings=Array.isArray(rows)?rows:[];
+  }catch(e){ marketListings=[]; }
+  marketLoaded=true;
+}
+
+function marketRarRank(c,rarete){
+  if(cardExceedsSet(c)) return 11;
+  if(cardIsSpecial(c)) return 10;
+  return {m:4,p:3,r:2,c:1}[rarete]||0;
+}
+
+function marketMatchesRar(c,a){
+  const f=venteRarFilter;
+  if(!f || f==='all') return true;
+  const secret=cardExceedsSet(c)||cardIsSpecial(c);
+  if(f==='secret') return secret;
+  if(secret) return false;
+  if(f.indexOf('rarete:')===0) return a.rarete==='c' && (c.rarete_tcgdex||'').toLowerCase()===f.slice(7);
+  return a.rarete===f;
+}
+
+function marketRows(){
+  const byId=new Map(cartes.map(c=>[String(c.id),c]));
+  const me=marketMe();
+  const q=normalizeSearchText(marketQuery);
+  let rows=marketListings.filter(marketCanSee).map(a=>({a,card:byId.get(String(a.carte_id))})).filter(x=>x.card);
+  if(marketScope==='friends') rows=rows.filter(x=>me && profileKey(x.a.seller_key)!==me && marketIsFriend(x.a.seller_key));
+  else if(marketScope==='wish') rows=rows.filter(x=>marketIsWished(x.a));
+  else if(marketScope==='mine') rows=rows.filter(x=>profileKey(x.a.seller_key)===me);
+  if(marketEtatFilter!=='all') rows=rows.filter(x=>x.a.etat===marketEtatFilter);
+  rows=rows.filter(x=>marketMatchesRar(x.card,x.a));
+  if(q){
+    rows=rows.filter(x=>{
+      const coll=collections.find(c=>c.id===x.card.collection_id);
+      const bloc=blocs.find(b=>b.id===coll?.bloc_id);
+      const hay=normalizeSearchText([x.card.nom,x.card.numero,coll?.nom,bloc?.nom,effectiveUserLabel(x.a.seller_key),x.a.seller_key,x.a.commentaire].join(' '));
+      return q.split(' ').every(w=>hay.includes(w));
+    });
+  }
+  const price=x=>parseFloat(x.a.prix)||0;
+  const time=x=>new Date(x.a.created_at||0).getTime();
+  switch(marketSortKey){
+    case 'price_asc': rows.sort((a,b)=>price(a)-price(b)||time(b)-time(a)); break;
+    case 'price_desc': rows.sort((a,b)=>price(b)-price(a)||time(b)-time(a)); break;
+    case 'rare_desc': rows.sort((a,b)=>marketRarRank(b.card,b.a.rarete)-marketRarRank(a.card,a.a.rarete)||price(b)-price(a)); break;
+    case 'name': rows.sort((a,b)=>(a.card.nom||'').localeCompare(b.card.nom||'','fr')); break;
+    default: rows.sort((a,b)=>time(b)-time(a));
+  }
+  return rows;
+}
+
+function marketCardHtml(x){
+  const a=x.a, c=x.card;
+  const me=marketMe();
+  const mine=me && profileKey(a.seller_key)===me;
+  const coll=collections.find(cc=>cc.id===c.collection_id);
+  const ri=venteRarInfo(c,a.rarete);
+  const prix=parseFloat(a.prix)||0;
+  const sugg=ventePrice(c.id,a.rarete);
+  const wished=marketIsWished(a);
+  const sellerKey=profileKey(a.seller_key);
+  let actions='';
+  if(mine){
+    actions=`<button class="market-btn" onclick="openMarketForm('${esc(c.id)}','${a.id}')">✏️ Modifier</button>
+      <button class="market-btn" onclick="marketMarkSold('${a.id}')">✓ Vendue</button>
+      <button class="market-btn danger" onclick="marketRemove('${a.id}')">🗑️</button>`;
+  }else if(!currentUser){
+    actions=`<button class="market-btn" onclick="showToast('Crée un compte ou connecte-toi pour contacter le vendeur')">💬 Contacter</button>`;
+  }else if(marketIsFriend(sellerKey)){
+    actions=`<button class="market-btn primary" onclick="marketContact('${a.id}')">💬 Contacter</button>`;
+  }else{
+    actions=`<button class="market-btn primary" onclick="marketAddFriend('${esc(sellerKey)}')">👥 Ajouter en ami</button>`;
+  }
+  return `<div class="vente-card market-card">
+    <img src="${esc(optImg(c.image))}" loading="lazy" onclick='openModal("${esc(c.id)}")'>
+    <div class="vente-info">
+      <div class="vente-name">${wished?'❤️ ':''}${esc(c.nom)}</div>
+      <div class="vente-meta">${esc(coll?.nom||'')} · n°${esc(c.numero||'')} · <span class="vente-rar ${ri.cls}" style="${ri.style||''}">${esc(ri.label)}</span>${a.etat?` · ${esc(marketEtatLabel(a.etat))}`:''}</div>
+      <div class="vente-row2">
+        <span class="vente-price">${prix>0?prix.toFixed(2)+' €':'Prix à voir'}</span>
+        <span class="vente-stock">x${parseInt(a.quantite)||1}</span>
+        ${sugg>0?`<span class="vente-stock" title="Prix CardMarket">(cote ${sugg.toFixed(2)} €)</span>`:''}
+      </div>
+      <div class="market-seller">${effectiveUserAvatar(sellerKey,18)} ${esc(effectiveUserLabel(sellerKey))} <span title="${a.visibilite==='friends'?'Visible par les amis':'Visible par tous'}">${a.visibilite==='friends'?'👥':'🌍'}</span></div>
+      ${a.commentaire?`<div class="vente-meta" style="white-space:normal;margin-top:3px;">💬 ${esc(a.commentaire)}</div>`:''}
+      <div class="market-actions">${actions}</div>
+    </div>
+  </div>`;
+}
+
+function marketChip(id,label,count){
+  return `<button class="market-chip${marketScope===id?' active':''}" onclick="marketSetScope('${id}')">${label}${count!=null?` <b>${count}</b>`:''}</button>`;
+}
+
+function renderVente(){
+  const body=document.getElementById('venteBody');
+  if(!body) return;
+  if(!marketLoaded){
+    body.innerHTML='<div class="loading"><div class="spinner"></div><span>Chargement des annonces…</span></div>';
+    loadMarket().then(()=>{ if(activeTab==='vente') renderVente(); });
+    return;
+  }
+  const visible=marketListings.filter(marketCanSee).filter(a=>cartes.some(c=>String(c.id)===String(a.carte_id)));
+  const me=marketMe();
+  const nbWish=visible.filter(marketIsWished).length;
+  const nbMine=visible.filter(a=>profileKey(a.seller_key)===me).length;
+  const rarList=visible.map(a=>({card:cartes.find(c=>String(c.id)===String(a.carte_id)),rarete:a.rarete}));
+  body.innerHTML=`<div class="vente-wrap">
+    ${currentUser?`<button class="btn-primary" style="margin-bottom:10px;" onclick="openMarketForm()">＋ Ajouter une carte à vendre</button>`
+      :`<div class="market-banner">👁️ Tu consultes les annonces publiques. <a href="#" onclick="doLogout();return false;" style="color:var(--accent2);font-weight:800;">Crée un compte</a> pour vendre et contacter les vendeurs.</div>`}
+    <input id="marketSearchInput" type="text" placeholder="Nom, numéro, série ou vendeur…" value="${esc(marketQuery)}" oninput="marketOnSearch(this.value)"
+      style="width:100%;padding:11px 14px;border-radius:12px;border:1.5px solid var(--border);background:var(--bg);color:var(--text);font-size:14px;margin-bottom:8px;">
+    <div class="market-chips">
+      ${marketChip('all','Toutes',null)}
+      ${currentUser?marketChip('friends','👥 Amis',null):''}
+      ${currentUser?marketChip('wish','❤️ Mes favoris',nbWish):''}
+      ${currentUser?marketChip('mine','🏷️ Mes annonces',nbMine):''}
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:8px;">
+      <select id="venteRarSelect" onchange="marketOnRar(this.value)" style="flex:1;min-width:0;padding:9px 10px;border-radius:10px;border:1.5px solid var(--border);background:var(--bg);color:var(--text);font-size:13px;font-weight:600;">${venteRarOptionsHtml(rarList)}</select>
+      <select id="marketEtatSelect" onchange="marketOnEtat(this.value)" style="flex:1;min-width:0;padding:9px 10px;border-radius:10px;border:1.5px solid var(--border);background:var(--bg);color:var(--text);font-size:13px;font-weight:600;">
+        <option value="all">Tous états</option>${MARKET_ETATS.map(e=>`<option value="${e[0]}"${marketEtatFilter===e[0]?' selected':''}>${e[1]}</option>`).join('')}
+      </select>
+    </div>
+    <div style="margin-bottom:12px;">
+      <select id="marketSortSelect" onchange="marketOnSort(this.value)" style="width:100%;padding:9px 12px;border-radius:10px;border:1.5px solid var(--border);background:var(--bg);color:var(--text);font-size:13px;font-weight:600;">
+        <option value="recent"${marketSortKey==='recent'?' selected':''}>Plus récentes d'abord</option>
+        <option value="price_asc"${marketSortKey==='price_asc'?' selected':''}>Prix croissant</option>
+        <option value="price_desc"${marketSortKey==='price_desc'?' selected':''}>Prix décroissant</option>
+        <option value="rare_desc"${marketSortKey==='rare_desc'?' selected':''}>Plus rares d'abord</option>
+        <option value="name"${marketSortKey==='name'?' selected':''}>Nom (A → Z)</option>
+      </select>
+    </div>
+    <div id="marketCount" class="vente-meta" style="margin-bottom:8px;"></div>
+    <div class="vente-list" id="marketList"></div>
+  </div>`;
+  enhanceFilterDropdown('venteRarSelect');
+  marketRenderList();
+}
+
+function marketRenderList(){
+  const list=document.getElementById('marketList');
+  if(!list) return;
+  const rows=marketRows();
+  const cnt=document.getElementById('marketCount');
+  if(cnt) cnt.textContent=rows.length+' annonce'+(rows.length>1?'s':'');
+  let empty='Aucune annonce pour le moment.';
+  if(marketScope==='wish') empty='Aucune annonce pour tes cartes favorites (❤️) pour l\'instant. Tu seras notifié dès qu\'une est mise en vente.';
+  else if(marketScope==='mine') empty='Tu n\'as aucune annonce. Appuie sur « Ajouter une carte à vendre ».';
+  else if(marketScope==='friends') empty='Tes amis n\'ont aucune annonce pour le moment.';
+  list.innerHTML=rows.length?rows.map(marketCardHtml).join(''):`<div style="text-align:center;color:var(--text2);padding:30px;font-size:14px;">${empty}</div>`;
+}
+
+function marketOnSearch(v){ marketQuery=v; marketRenderList(); }
+function marketOnRar(v){ venteRarFilter=v; marketRenderList(); }
+function marketOnEtat(v){ marketEtatFilter=v; marketRenderList(); }
+function marketOnSort(v){ marketSortKey=v; marketRenderList(); }
+function marketSetScope(s){ marketScope=s; renderVente(); }
+
+/* ── Mise en vente / modification ─────────────────────────────── */
+function openMarketForm(carteId, annonceId){
+  if(!currentUser){ showToast('Connecte-toi pour vendre une carte'); return; }
+  const annonce=annonceId?marketListings.find(a=>String(a.id)===String(annonceId)):null;
+  marketForm={carteId:carteId?String(carteId):'', annonce:annonce||null, q:''};
+  if(typeof closeModal==='function' && document.getElementById('modal')?.style.display==='block') closeModal();
+  marketFormRender();
+}
+function closeMarketForm(){
+  document.getElementById('marketFormOverlay')?.remove();
+  marketForm=null;
+}
+function marketFormShell(inner){
+  let ov=document.getElementById('marketFormOverlay');
+  if(!ov){
+    ov=document.createElement('div');
+    ov.id='marketFormOverlay';
+    ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:2147483000;display:flex;align-items:flex-end;justify-content:center;';
+    ov.onclick=e=>{ if(e.target===ov) closeMarketForm(); };
+    document.body.appendChild(ov);
+  }
+  ov.innerHTML=`<div style="background:var(--bg2);width:100%;max-width:560px;max-height:92vh;overflow:auto;border-radius:18px 18px 0 0;padding:16px;">${inner}</div>`;
+}
+function marketFormRender(){
+  if(!marketForm) return;
+  if(!marketForm.carteId){ marketFormRenderSearch(); return; }
+  const c=cartes.find(x=>String(x.id)===marketForm.carteId);
+  if(!c){ marketForm.carteId=''; marketFormRenderSearch(); return; }
+  const a=marketForm.annonce;
+  const coll=collections.find(cc=>cc.id===c.collection_id);
+  const rarete=a?a.rarete:'c';
+  const sugg=ventePrice(c.id,rarete);
+  const prixVal=a?(parseFloat(a.prix)||''):(sugg>0?sugg.toFixed(2):'');
+  const inp='width:100%;padding:11px 12px;border-radius:10px;border:1.5px solid var(--border);background:var(--bg);color:var(--text);font-size:14px;';
+  const lbl='display:block;font-size:12px;font-weight:800;color:var(--text2);margin:10px 0 4px;';
+  marketFormShell(`
+    <div style="display:flex;gap:12px;align-items:center;margin-bottom:6px;">
+      <img src="${esc(optImg(c.image))}" style="width:56px;height:78px;object-fit:cover;border-radius:8px;background:var(--bg);">
+      <div style="flex:1;min-width:0;">
+        <div style="font-weight:900;font-size:16px;">${esc(c.nom)}</div>
+        <div class="vente-meta">${esc(coll?.nom||'')} · n°${esc(c.numero||'')}</div>
+        ${a?'':`<button class="market-btn" style="margin-top:6px;" onclick="marketForm.carteId='';marketFormRender()">Changer de carte</button>`}
+      </div>
+    </div>
+    <label style="${lbl}">Rareté / version</label>
+    <select id="mfRarete" onchange="marketFormUpdateSugg()" style="${inp}">${TYPES.map(t=>`<option value="${t}"${t===rarete?' selected':''}>${esc(venteRarInfo(c,t).label)}</option>`).join('')}</select>
+    <label style="${lbl}">État</label>
+    <select id="mfEtat" style="${inp}">${MARKET_ETATS.map(e=>`<option value="${e[0]}"${(a?a.etat:'excellent')===e[0]?' selected':''}>${e[1]}</option>`).join('')}</select>
+    <div style="display:flex;gap:10px;">
+      <div style="flex:1;"><label style="${lbl}">Quantité</label><input id="mfQty" type="number" min="1" max="99" value="${a?(parseInt(a.quantite)||1):1}" style="${inp}"></div>
+      <div style="flex:1;"><label style="${lbl}">Prix (€)</label><input id="mfPrix" type="number" min="0" step="0.01" inputmode="decimal" oninput="this.dataset.touched=1" value="${prixVal}" placeholder="0.00" style="${inp}"></div>
+    </div>
+    <div id="mfSugg" class="vente-meta" style="margin-top:4px;">${sugg>0?`Prix conseillé (CardMarket) : <b>${sugg.toFixed(2)} €</b> — tu fixes le prix que tu veux.`:'Pas de cote connue pour cette carte.'}</div>
+    <label style="${lbl}">Commentaire (optionnel)</label>
+    <input id="mfCom" type="text" maxlength="140" value="${esc(a?.commentaire||'')}" placeholder="Ex : remise en main propre, échange possible…" style="${inp}">
+    <label style="${lbl}">Visible par</label>
+    <select id="mfVis" style="${inp}">
+      <option value="public"${(a?a.visibilite:'public')==='public'?' selected':''}>🌍 Tout le monde</option>
+      <option value="friends"${(a?a.visibilite:'public')==='friends'?' selected':''}>👥 Mes amis seulement</option>
+    </select>
+    <div style="display:flex;gap:8px;margin-top:16px;">
+      <button class="btn-secondary" style="flex:1;" onclick="closeMarketForm()">Annuler</button>
+      <button class="btn-primary" style="flex:2;" onclick="marketFormSubmit()">${a?'Enregistrer':'Mettre en vente'}</button>
+    </div>`);
+}
+function marketFormUpdateSugg(){
+  const r=document.getElementById('mfRarete')?.value||'c';
+  const s=ventePrice(marketForm.carteId,r);
+  const el=document.getElementById('mfSugg');
+  if(el) el.innerHTML=s>0?`Prix conseillé (CardMarket) : <b>${s.toFixed(2)} €</b> — tu fixes le prix que tu veux.`:'Pas de cote connue pour cette version.';
+  const p=document.getElementById('mfPrix');
+  if(p && s>0 && !marketForm.annonce && !p.dataset.touched) p.value=s.toFixed(2);
+}
+function marketFormRenderSearch(){
+  marketFormShell(`
+    <div style="font-weight:900;font-size:16px;margin-bottom:10px;">🏷️ Quelle carte veux-tu vendre ?</div>
+    <input id="mfSearch" type="text" placeholder="Nom ou numéro de la carte…" value="${esc(marketForm.q||'')}" oninput="marketFormSearch(this.value)" autocomplete="off"
+      style="width:100%;padding:11px 14px;border-radius:12px;border:1.5px solid var(--border);background:var(--bg);color:var(--text);font-size:14px;">
+    <div id="mfResults" class="vente-list" style="margin-top:10px;"></div>
+    <button class="btn-secondary" style="margin-top:12px;" onclick="closeMarketForm()">Annuler</button>`);
+  marketFormSearch(marketForm.q||'');
+  setTimeout(()=>document.getElementById('mfSearch')?.focus(),60);
+}
+function marketFormSearch(v){
+  marketForm.q=v;
+  const res=document.getElementById('mfResults');
+  if(!res) return;
+  const q=normalizeSearchText(v);
+  if(q.length<2){ res.innerHTML='<div class="vente-meta" style="padding:10px;">Tape au moins 2 caractères.</div>'; return; }
+  const hits=cartes.filter(c=>{
+    const coll=collections.find(cc=>cc.id===c.collection_id);
+    const hay=normalizeSearchText([c.nom,c.numero,coll?.nom].join(' '));
+    return q.split(' ').every(w=>hay.includes(w));
+  }).slice(0,30);
+  res.innerHTML=hits.length?hits.map(c=>{
+    const coll=collections.find(cc=>cc.id===c.collection_id);
+    return `<div class="vente-card" style="cursor:pointer;" onclick="marketForm.carteId='${esc(c.id)}';marketFormRender()">
+      <img src="${esc(optImg(c.image))}" loading="lazy">
+      <div class="vente-info"><div class="vente-name">${esc(c.nom)}</div><div class="vente-meta">${esc(coll?.nom||'')} · n°${esc(c.numero||'')}</div></div>
+    </div>`;
+  }).join(''):'<div class="vente-meta" style="padding:10px;">Aucune carte trouvée.</div>';
+}
+
+async function marketFormSubmit(){
+  if(!marketForm || !currentUser) return;
+  const c=cartes.find(x=>String(x.id)===marketForm.carteId);
+  if(!c) return;
+  const rarete=document.getElementById('mfRarete').value;
+  const etat=document.getElementById('mfEtat').value;
+  const qty=parseInt(document.getElementById('mfQty').value);
+  const prix=parseFloat(String(document.getElementById('mfPrix').value).replace(',','.'));
+  const com=(document.getElementById('mfCom').value||'').trim();
+  const vis=document.getElementById('mfVis').value==='friends'?'friends':'public';
+  if(!(qty>=1)){ showToast('Quantité invalide'); return; }
+  if(!(prix>=0)){ showToast('Indique un prix'); return; }
+  const now=new Date().toISOString();
+  const a=marketForm.annonce;
+  try{
+    if(a){
+      await sbPatch('ventes_annonces','?id=eq.'+encodeURIComponent(a.id),{rarete,etat,quantite:qty,prix,commentaire:com,visibilite:vis,updated_at:now});
+      Object.assign(a,{rarete,etat,quantite:qty,prix,commentaire:com,visibilite:vis});
+      showToast('✅ Annonce modifiée');
+    }else{
+      const row={seller_key:marketMe(),carte_id:String(c.id),rarete,etat,quantite:qty,prix,commentaire:com,visibilite:vis,statut:'active',created_at:now,updated_at:now};
+      const res=await sbPost('ventes_annonces',row);
+      const saved=Array.isArray(res)&&res[0]?res[0]:row;
+      marketListings.unshift(saved);
+      showToast('✅ Carte mise en vente');
+      marketNotifyWishers(saved,c).catch(e=>console.warn('notif favoris',e));
+    }
+    closeMarketForm();
+    marketLoaded=true;
+    if(activeTab==='vente') renderVente();
+    else if(!a){ marketScope='mine'; switchTab('vente'); }
+  }catch(e){
+    showToast('❌ Impossible d\'enregistrer : table ventes_annonces à créer dans Supabase ?');
+    console.warn(e);
+  }
+}
+
+/* ── Notifications : une carte favorite (❤️) vient d'être mise en vente ── */
+async function marketNotifyWishers(a,card){
+  const rows=await sbGet('card_wishlist','?select=user_key,rarete&carte_id=eq.'+encodeURIComponent(String(a.carte_id)));
+  const me=marketMe();
+  const friends=new Set(chatFriends());
+  const targets=new Set();
+  (rows||[]).forEach(r=>{
+    const u=profileKey(r.user_key);
+    if(!u || u===me) return;
+    if(r.rarete && r.rarete!==a.rarete) return;                 // il cherche une autre version
+    if(a.visibilite==='friends' && !friends.has(u)) return;      // annonce réservée aux amis du vendeur
+    targets.add(u);
+  });
+  const prix=parseFloat(a.prix)||0;
+  const ri=venteRarInfo(card,a.rarete);
+  for(const u of targets){
+    await addAppNotification('vente_wishlist', currentUser, u,
+      '❤️ Une carte recherchée est en vente',
+      `${effectiveUserLabel(currentUser)} vend ${card.nom} (${ri.label}) ${prix>0?'à '+prix.toFixed(2)+' €':''}`.trim(),
+      {annonce_id:a.id, carte_id:String(a.carte_id)});
+  }
+}
+
+/* ── Actions sur mes annonces ─────────────────────────────────── */
+async function marketMarkSold(id){
+  const a=marketListings.find(x=>String(x.id)===String(id));
+  if(!a) return;
+  const n=parseInt(a.quantite)||1;
+  let sold=1;
+  if(n>1){
+    const v=prompt('Combien d\'exemplaires vendus ? (1 à '+n+')','1');
+    if(v===null) return;
+    sold=Math.max(1,Math.min(n,parseInt(v)||1));
+  }
+  const left=n-sold;
+  try{
+    await sbPatch('ventes_annonces','?id=eq.'+encodeURIComponent(id),left>0?{quantite:left,updated_at:new Date().toISOString()}:{quantite:0,statut:'sold',updated_at:new Date().toISOString()});
+    if(left>0) a.quantite=left; else marketListings=marketListings.filter(x=>String(x.id)!==String(id));
+    showToast('✅ Vente enregistrée');
+    renderVente();
+  }catch(e){ showToast('❌ Modification impossible'); }
+}
+async function marketRemove(id){
+  if(!confirm('Retirer cette annonce ?')) return;
+  try{
+    await sbPatch('ventes_annonces','?id=eq.'+encodeURIComponent(id),{statut:'removed',updated_at:new Date().toISOString()});
+    marketListings=marketListings.filter(x=>String(x.id)!==String(id));
+    showToast('Annonce retirée');
+    renderVente();
+  }catch(e){ showToast('❌ Suppression impossible'); }
+}
+
+/* ── Contacter un vendeur (messagerie existante, réservée aux amis) ── */
+async function marketContact(id){
+  const a=marketListings.find(x=>String(x.id)===String(id));
+  if(!a || !currentUser) return;
+  const seller=profileKey(a.seller_key);
+  const card=cartes.find(c=>String(c.id)===String(a.carte_id));
+  const ri=card?venteRarInfo(card,a.rarete):{label:a.rarete};
+  const prix=parseFloat(a.prix)||0;
+  const body=`Salut ! Ta carte ${card?.nom||''} (${ri.label}) ${prix>0?'à '+prix.toFixed(2)+' € ':''}est-elle toujours dispo ? 😊`.replace(/\s+/g,' ');
+  try{
+    await sbPost('chat_messages',{
+      conversation_id:conversationIdFor(currentUser,seller),
+      sender_key:profileKey(currentUser),
+      receiver_key:seller,
+      body,image_url:'',card_id:String(a.carte_id),
+      created_at:new Date().toISOString()
+    });
+    await addAppNotification('message', currentUser, seller, 'Carte demandée', `${effectiveUserLabel(currentUser)} est intéressé(e) par ${card?.nom||'une de tes cartes'} en vente`);
+    refreshMessagesBadge().catch(()=>{});
+    showToast('✅ Message envoyé à '+effectiveUserLabel(seller));
+    currentChatFriend=seller;
+    switchTab('messages');
+  }catch(e){ showToast('❌ '+e.message); }
+}
+async function marketAddFriend(key){
+  if(!currentUser){ showToast('Connecte-toi'); return; }
+  const me=marketMe(), to=profileKey(key);
+  if(!to || to===me) return;
+  if(friendRequests.some(r=>profileKey(r.from_key)===me && profileKey(r.to_key)===to && r.status==='pending')){
+    showToast('Demande déjà envoyée à '+effectiveUserLabel(to)); return;
+  }
+  const row={from_key:me,to_key:to,status:'pending',created_at:new Date().toISOString(),updated_at:new Date().toISOString()};
+  try{
+    await sbPost('friend_requests',row);
+    friendRequests=[{...row,_direction:'outgoing'},...friendRequests];
+    await addAppNotification('friend_request', currentUser, to, 'Nouvelle demande d’ami', `${effectiveUserLabel(currentUser)} veut t’ajouter en ami`);
+    showToast('✅ Demande d\'ami envoyée. Tu pourras discuter une fois acceptée.');
+  }catch(e){ showToast('❌ '+e.message); }
+}
+
+/* ── Quand j'ajoute une carte en favori : est-elle déjà en vente ? ── */
+function marketCheckWishedNow(carteId){
+  const hits=marketListings.filter(a=>String(a.carte_id)===String(carteId) && marketCanSee(a) && profileKey(a.seller_key)!==marketMe() && marketIsWished(a));
+  if(hits.length){
+    const c=cartes.find(x=>String(x.id)===String(carteId));
+    showToast(`❤️ ${c?.nom||'Cette carte'} est en vente chez ${effectiveUserLabel(hits[0].seller_key)} !`,4000);
+  }
+}
+
 
 tryRestoreAuth();
 
