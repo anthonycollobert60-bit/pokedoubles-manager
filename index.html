@@ -2820,6 +2820,7 @@ async function _loadDataCore(requestedGame){
     loadUserProfiles();
     loadHistory();
     loadFriends();
+    loadChatPartners(true);
     loadWishlist();
     refreshMessagesBadge();
     loadNotifications();
@@ -4225,7 +4226,10 @@ async function getWishlistForUser(userKey){
 }
 
 function chatFriends(){
-  return (userFriends||[]).map(f=>profileKey(f.friend_key)).filter(Boolean);
+  const me=profileKey(currentUser);
+  const set=new Set((userFriends||[]).map(f=>profileKey(f.friend_key)).filter(Boolean));
+  (typeof chatExtraPartners!=='undefined'?chatExtraPartners:[]).forEach(k=>{ if(k&&k!==me) set.add(k); });
+  return [...set];
 }
 function conversationIdFor(a,b){
   return [profileKey(a), profileKey(b)].sort().join('__');
@@ -4478,6 +4482,7 @@ function notificationIcon(type){
   if(type==='message') return '💬';
   if(type==='vente_request') return '🛒';
   if(type==='vente_wishlist') return '❤️';
+  if(String(type).indexOf('vente_')===0 && type!=='vente_request') return '🛒';
   return '🔔';
 }
 function renderNotificationCenter(){
@@ -4505,7 +4510,8 @@ async function openNotification(id,type){
   else if(type==='transfer_received') switchTab('transfer');
   else if(type==='message') switchTab('messages');
   else if(type==='vente_request') switchTab('vente');
-  else if(type==='vente_wishlist'){ marketScope='wish'; switchTab('vente'); }
+  else if(type==='vente_wishlist'){ marketScope='wish'; marketView='list'; switchTab('vente'); }
+  else if(['vente_demande','vente_offre','vente_acceptee','vente_refusee','vente_conclue','vente_annulee'].includes(type)){ marketView='orders'; marketLoaded=false; switchTab('vente'); }
 }
 async function markNotificationsRead(){
   if(!currentUser) return;
@@ -4808,6 +4814,7 @@ async function renderConversationList(){
 async function renderMessages(){
   const body=document.getElementById('messagesBody');
   if(!currentUser){ body.innerHTML='<div class="empty-state"><h3>Connecte-toi</h3></div>'; return; }
+  await loadChatPartners();
   const friends=chatFriends();
   if(!friends.length){
     body.innerHTML=`<div class="section-title">💬 Messages</div>
@@ -7726,8 +7733,8 @@ function doGlobalSearch(){
 // Phase de test : seul MARKET_BETA_OWNER accède à l'onglet Vente. Pour ouvrir à
 // tout le monde, passer MARKET_BETA à false.
 const MARKET_BETA=true;
-const MARKET_BETA_OWNER='anthony';
-function marketAllowed(){ return !MARKET_BETA || (!!currentUser && profileKey(currentUser)===MARKET_BETA_OWNER); }
+const MARKET_BETA_USERS=['anthony'];   // ajouter 'valentin' ici pour le laisser tester
+function marketAllowed(){ return !MARKET_BETA || (!!currentUser && MARKET_BETA_USERS.includes(profileKey(currentUser))); }
 const MARKET_ETATS=[['neuf','Neuf'],['excellent','Excellent'],['bon','Bon'],['joue','Joué'],['abime','Abîmé']];
 function marketEtatLabel(k){ const f=MARKET_ETATS.find(e=>e[0]===k); return f?f[1]:''; }
 
@@ -7738,9 +7745,10 @@ let marketEtatFilter='all';
 let marketSortKey='recent';
 let marketQuery='';
 let marketForm=null;          // {carteId, annonce, q}
+let marketCartUser=null;
 
 function marketMe(){ return currentUser?profileKey(currentUser):''; }
-function marketIsFriend(key){ return chatFriends().includes(profileKey(key)); }
+function marketIsFriend(key){ const k=profileKey(key); return (userFriends||[]).some(f=>profileKey(f.friend_key)===k); }
 function marketCanSee(a){
   const me=marketMe();
   if(me && profileKey(a.seller_key)===me) return true;
@@ -7758,6 +7766,7 @@ async function loadMarket(){
     const rows=await sbGet('ventes_annonces','?select=*&statut=eq.active&quantite=gt.0&order=created_at.desc');
     marketListings=Array.isArray(rows)?rows:[];
   }catch(e){ marketListings=[]; }
+  await loadMarketOrders();
   marketLoaded=true;
 }
 
@@ -7836,17 +7845,21 @@ function marketCardHtml(x){
   const sugg=ventePrice(c.id,a.rarete);
   const wished=marketIsWished(a);
   const sellerKey=profileKey(a.seller_key);
+  const reserved=marketReserved(a.id);
+  const avail=Math.max((parseInt(a.quantite)||0)-reserved,0);
   let actions='';
   if(mine){
     actions=`<button class="market-btn" onclick="openMarketForm('${esc(c.id)}','${a.id}')">✏️ Modifier</button>
       <button class="market-btn" onclick="marketMarkSold('${a.id}')">✓ Vendue</button>
       <button class="market-btn danger" onclick="marketRemove('${a.id}')">🗑️</button>`;
   }else if(!currentUser){
-    actions=`<button class="market-btn" onclick="showToast('Crée un compte ou connecte-toi pour contacter le vendeur')">💬 Contacter</button>`;
-  }else if(marketIsFriend(sellerKey)){
-    actions=`<button class="market-btn primary" onclick="marketContact('${a.id}')">💬 Contacter</button>`;
+    actions=`<button class="market-btn" onclick="showToast('Crée un compte ou connecte-toi pour acheter ou contacter le vendeur')">🛒 Acheter</button>
+      <button class="market-btn" onclick="showToast('Crée un compte ou connecte-toi pour contacter le vendeur')">💬 Contacter</button>`;
   }else{
-    actions=`<button class="market-btn primary" onclick="marketAddFriend('${esc(sellerKey)}')">👥 Ajouter en ami</button>`;
+    const inCart=parseInt(marketCart[a.id])||0;
+    actions=(avail>0?`<button class="market-btn primary" onclick="marketCartAdd('${a.id}')">🛒 ${inCart?'Panier ('+inCart+') +':'Ajouter au panier'}</button>`:`<span class="vente-rar vente-rar-c">Réservée</span>`)+
+      `<button class="market-btn" onclick="marketContact('${a.id}')">💬 Contacter</button>`+
+      (marketIsFriend(sellerKey)?'':`<button class="market-btn" onclick="marketAddFriend('${esc(sellerKey)}')">👥 Ajouter</button>`);
   }
   return `<div class="vente-card market-card">
     <img src="${esc(optImg(c.image))}" loading="lazy" onclick='openModal("${esc(c.id)}")'>
@@ -7855,7 +7868,7 @@ function marketCardHtml(x){
       <div class="vente-meta">${esc(coll?.nom||'')} · n°${esc(c.numero||'')} · <span class="vente-rar ${ri.cls}" style="${ri.style||''}">${esc(ri.label)}</span>${a.etat?` · ${esc(marketEtatLabel(a.etat))}`:''}</div>
       <div class="vente-row2">
         <span class="vente-price">${prix>0?prix.toFixed(2)+' €':'Prix à voir'}</span>
-        <span class="vente-stock">x${parseInt(a.quantite)||1}</span>
+        <span class="vente-stock">x${avail}${reserved>0?' · '+reserved+' réservé'+(reserved>1?'s':''):''}</span>
         ${sugg>0?`<span class="vente-stock" title="Prix CardMarket">(cote ${sugg.toFixed(2)} €)</span>`:''}
       </div>
       <div class="market-seller">${effectiveUserAvatar(sellerKey,18)} ${esc(effectiveUserLabel(sellerKey))} <span title="${a.visibilite==='friends'?'Visible par les amis':'Visible par tous'}">${a.visibilite==='friends'?'👥':'🌍'}</span></div>
@@ -7877,12 +7890,24 @@ function renderVente(){
     loadMarket().then(()=>{ if(activeTab==='vente') renderVente(); });
     return;
   }
-  const visible=marketListings.filter(marketCanSee).filter(a=>cartes.some(c=>String(c.id)===String(a.carte_id)));
+  if(marketCartUser!==marketMe()){ marketCartUser=marketMe(); marketCartLoad(); }
   const me=marketMe();
+  const todo=currentUser?marketOrdersTodo():0;
+  const viewTabs=currentUser?`<div class="market-chips" style="margin-bottom:10px;">
+      <button class="market-chip${marketView==='list'?' active':''}" onclick="marketSetView('list')">🏷️ Annonces</button>
+      <button class="market-chip${marketView==='orders'?' active':''}" onclick="marketSetView('orders')">📥 Demandes${todo?` <b style="background:#ef4444;color:#fff;border-radius:999px;padding:0 6px;">${todo}</b>`:''}</button>
+    </div>`:'';
+  if(marketView==='orders' && currentUser){
+    body.innerHTML=`<div class="vente-wrap">${viewTabs}<div id="marketOrdersBox"></div></div>`;
+    renderMarketOrders();
+    return;
+  }
+  const visible=marketListings.filter(marketCanSee).filter(a=>cartes.some(c=>String(c.id)===String(a.carte_id)));
   const nbWish=visible.filter(marketIsWished).length;
   const nbMine=visible.filter(a=>profileKey(a.seller_key)===me).length;
   const rarList=visible.map(a=>({card:cartes.find(c=>String(c.id)===String(a.carte_id)),rarete:a.rarete}));
   body.innerHTML=`<div class="vente-wrap">
+    ${viewTabs}
     ${currentUser?`<button class="btn-primary" style="margin-bottom:10px;" onclick="openMarketForm()">＋ Ajouter une carte à vendre</button>`
       :`<div class="market-banner">👁️ Tu consultes les annonces publiques. <a href="#" onclick="doLogout();return false;" style="color:var(--accent2);font-weight:800;">Crée un compte</a> pour vendre et contacter les vendeurs.</div>`}
     <input id="marketSearchInput" type="text" placeholder="Nom, numéro, série ou vendeur…" value="${esc(marketQuery)}" oninput="marketOnSearch(this.value)"
@@ -7913,6 +7938,7 @@ function renderVente(){
   </div>`;
   enhanceFilterDropdown('venteRarSelect');
   marketRenderList();
+  marketRenderCartBar();
 }
 
 function marketRenderList(){
@@ -8061,6 +8087,7 @@ async function marketFormSubmit(){
   const c=cartes.find(x=>String(x.id)===marketForm.carteId);
   if(!c) return;
   const a=marketForm.annonce;
+  if(a && (parseInt(document.getElementById('mfQty').value)||0)<marketReserved(a.id)){ showToast('Quantité inférieure aux cartes déjà réservées ('+marketReserved(a.id)+')'); return; }
   const rarete=document.getElementById('mfRarete').value;
   const etat=document.getElementById('mfEtat').value;
   const qty=parseInt(document.getElementById('mfQty').value);
@@ -8108,12 +8135,12 @@ async function marketFormSubmit(){
 async function marketNotifyWishers(a,card){
   const rows=await sbGet('card_wishlist','?select=user_key,rarete&carte_id=eq.'+encodeURIComponent(String(a.carte_id)));
   const me=marketMe();
-  const friends=new Set(chatFriends());
+  const friends=new Set((userFriends||[]).map(f=>profileKey(f.friend_key)));
   const targets=new Set();
   (rows||[]).forEach(r=>{
     const u=profileKey(r.user_key);
     if(!u || u===me) return;
-    if(MARKET_BETA && u!==MARKET_BETA_OWNER) return;               // test : pas de notif à ceux qui n'ont pas accès
+    if(MARKET_BETA && !MARKET_BETA_USERS.includes(u)) return;               // test : pas de notif à ceux qui n'ont pas accès
     if(r.rarete && r.rarete!==a.rarete) return;                 // il cherche une autre version
     if(a.visibilite==='friends' && !friends.has(u)) return;      // annonce réservée aux amis du vendeur
     targets.add(u);
@@ -8132,7 +8159,8 @@ async function marketNotifyWishers(a,card){
 async function marketMarkSold(id){
   const a=marketListings.find(x=>String(x.id)===String(id));
   if(!a) return;
-  const n=parseInt(a.quantite)||1;
+  const n=marketAvailable(a);
+  if(n<=0){ showToast('Toutes les cartes de cette annonce sont réservées'); return; }
   let sold=1;
   if(n>1){
     const v=prompt('Combien d\'exemplaires vendus ? (1 à '+n+')','1');
@@ -8148,6 +8176,7 @@ async function marketMarkSold(id){
   }catch(e){ showToast('❌ Modification impossible'); }
 }
 async function marketRemove(id){
+  if(marketReserved(id)>0){ showToast('Des demandes sont en cours sur cette annonce'); return; }
   if(!confirm('Retirer cette annonce ?')) return;
   try{
     await sbPatch('ventes_annonces','?id=eq.'+encodeURIComponent(id),{statut:'removed',updated_at:new Date().toISOString()});
@@ -8177,8 +8206,7 @@ async function marketContact(id){
     await addAppNotification('message', currentUser, seller, 'Carte demandée', `${effectiveUserLabel(currentUser)} est intéressé(e) par ${card?.nom||'une de tes cartes'} en vente`);
     refreshMessagesBadge().catch(()=>{});
     showToast('✅ Message envoyé à '+effectiveUserLabel(seller));
-    currentChatFriend=seller;
-    switchTab('messages');
+    marketOpenChat(seller);
   }catch(e){ showToast('❌ '+e.message); }
 }
 async function marketAddFriend(key){
@@ -8206,6 +8234,466 @@ function marketCheckWishedNow(carteId){
   }
 }
 
+
+
+/* ══ MARKETPLACE — PHASE 2 : panier, demandes, offres, réservation ═══════
+   Table ventes_commandes (une commande = un acheteur + un vendeur).
+   Cycle : pending (offre en attente, tour de l'autre partie) → accepted
+   (cartes RÉSERVÉES) → completed (« Vente conclue » par le vendeur : retire
+   des doubles du vendeur, ajoute chez l'acheteur). refused / cancelled
+   libèrent la réservation. */
+let marketOrders=[];                 // commandes chargées (réservations + les miennes)
+let marketView='list';               // list | orders
+let marketCart={};                   // { annonceId: qty }
+const MARKET_ORDER_OPEN=['pending','accepted'];
+
+function marketCartKey(){ return 'market_cart_'+marketMe(); }
+function marketCartLoad(){
+  try{ marketCart=JSON.parse(localStorage.getItem(marketCartKey())||'{}')||{}; }catch(e){ marketCart={}; }
+}
+function marketCartSave(){
+  try{ localStorage.setItem(marketCartKey(),JSON.stringify(marketCart)); }catch(e){}
+}
+
+/* ── Chargement des commandes ─────────────────────────────────── */
+async function loadMarketOrders(){
+  const me=marketMe();
+  const map=new Map();
+  try{
+    const open=await sbGet('ventes_commandes','?select=*&statut=in.(pending,accepted)');
+    (open||[]).forEach(o=>map.set(String(o.id),o));
+  }catch(e){}
+  if(me){
+    for(const col of ['buyer_key','seller_key']){
+      try{
+        const rows=await sbGet('ventes_commandes','?select=*&'+col+'=eq.'+encodeURIComponent(me)+'&order=updated_at.desc&limit=100');
+        (rows||[]).forEach(o=>map.set(String(o.id),o));
+      }catch(e){}
+    }
+  }
+  marketOrders=[...map.values()].sort((a,b)=>new Date(b.updated_at||0)-new Date(a.updated_at||0));
+}
+
+/* ── Réservations ─────────────────────────────────────────────── */
+function marketReserved(annonceId,excludeOrderId){
+  let n=0;
+  marketOrders.forEach(o=>{
+    if(!MARKET_ORDER_OPEN.includes(o.statut)) return;
+    if(excludeOrderId && String(o.id)===String(excludeOrderId)) return;
+    (o.items||[]).forEach(it=>{ if(String(it.annonce_id)===String(annonceId)) n+=parseInt(it.qty)||0; });
+  });
+  return n;
+}
+function marketAvailable(a,excludeOrderId){
+  return Math.max((parseInt(a.quantite)||0)-marketReserved(a.id,excludeOrderId),0);
+}
+
+/* ── Panier ───────────────────────────────────────────────────── */
+function marketCartCount(){ return Object.values(marketCart).reduce((s,n)=>s+(parseInt(n)||0),0); }
+function marketCartAdd(id){
+  if(!currentUser){ showToast('Crée un compte ou connecte-toi pour acheter'); return; }
+  const a=marketListings.find(x=>String(x.id)===String(id));
+  if(!a) return;
+  if(profileKey(a.seller_key)===marketMe()){ showToast('C\'est ta propre annonce'); return; }
+  const cur=parseInt(marketCart[id])||0;
+  if(cur>=marketAvailable(a)){ showToast('Quantité maximale disponible atteinte'); return; }
+  marketCart[id]=cur+1;
+  marketCartSave();
+  showToast('🛒 Ajoutée au panier');
+  marketRenderCartBar();
+}
+function marketCartChange(id,delta){
+  const a=marketListings.find(x=>String(x.id)===String(id));
+  let n=(parseInt(marketCart[id])||0)+delta;
+  if(a) n=Math.min(n,marketAvailable(a));
+  if(n<=0) delete marketCart[id]; else marketCart[id]=n;
+  marketCartSave();
+  marketRenderCartBar();
+  if(document.getElementById('marketCartOverlay')) marketCartRender();
+}
+function marketCartLines(){
+  const lines=[];
+  Object.keys(marketCart).forEach(id=>{
+    const a=marketListings.find(x=>String(x.id)===String(id));
+    const qty=parseInt(marketCart[id])||0;
+    if(!a||qty<=0) return;
+    const card=cartes.find(c=>String(c.id)===String(a.carte_id));
+    lines.push({a,card,qty});
+  });
+  return lines;
+}
+function marketCartTotal(lines){ return lines.reduce((s,l)=>s+(parseFloat(l.a.prix)||0)*l.qty,0); }
+function marketRenderCartBar(){
+  document.getElementById('marketCartBar')?.remove();
+  if(activeTab!=='vente' || !currentUser || marketView!=='list') return;
+  const lines=marketCartLines();
+  if(!lines.length) return;
+  const bar=document.createElement('div');
+  bar.id='marketCartBar';
+  bar.className='vente-cartbar';
+  bar.onclick=openMarketCart;
+  bar.innerHTML=`<div>🛒 ${lines.reduce((s,l)=>s+l.qty,0)} carte(s)</div><div class="vente-cartbar-right">${marketCartTotal(lines).toFixed(2)} € — Voir le panier</div>`;
+  document.getElementById('venteBody').appendChild(bar);
+}
+function openMarketCart(){
+  if(!currentUser) return;
+  let ov=document.getElementById('marketCartOverlay');
+  if(!ov){
+    ov=document.createElement('div');
+    ov.id='marketCartOverlay';
+    ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:2147483000;display:flex;align-items:flex-end;justify-content:center;';
+    ov.onclick=e=>{ if(e.target===ov) closeMarketCart(); };
+    document.body.appendChild(ov);
+  }
+  marketCartRender();
+}
+function closeMarketCart(){ document.getElementById('marketCartOverlay')?.remove(); marketRenderCartBar(); }
+function marketCartRender(){
+  const ov=document.getElementById('marketCartOverlay');
+  if(!ov) return;
+  const lines=marketCartLines();
+  if(!lines.length){
+    ov.innerHTML=`<div style="background:var(--bg2);width:100%;max-width:560px;border-radius:18px 18px 0 0;padding:20px;text-align:center;">
+      <div class="vente-meta" style="margin-bottom:12px;">Ton panier est vide.</div>
+      <button class="btn-secondary" onclick="closeMarketCart()">Fermer</button></div>`;
+    return;
+  }
+  const groups={};
+  lines.forEach(l=>{ (groups[profileKey(l.a.seller_key)]=groups[profileKey(l.a.seller_key)]||[]).push(l); });
+  const inp='width:100%;padding:10px 12px;border-radius:10px;border:1.5px solid var(--border);background:var(--bg);color:var(--text);font-size:14px;';
+  ov.innerHTML=`<div style="background:var(--bg2);width:100%;max-width:560px;max-height:92vh;overflow:auto;border-radius:18px 18px 0 0;padding:16px;">
+    <div style="font-weight:900;font-size:16px;margin-bottom:4px;">🛒 Mon panier</div>
+    <div class="vente-meta" style="margin-bottom:10px;">Une demande est envoyée à chaque vendeur. Tu peux proposer un prix pour tout le lot.</div>
+    ${Object.keys(groups).map(seller=>{
+      const gl=groups[seller];
+      const total=marketCartTotal(gl);
+      return `<div style="border:1px solid var(--border);border-radius:14px;padding:10px;margin-bottom:12px;background:var(--surface);">
+        <div class="market-seller" style="margin:0 0 8px;">${effectiveUserAvatar(seller,20)} <b>${esc(effectiveUserLabel(seller))}</b></div>
+        ${gl.map(l=>{
+          const c=l.card; const ri=c?venteRarInfo(c,l.a.rarete):{label:l.a.rarete,cls:''};
+          return `<div class="vc-line" style="margin-bottom:8px;">
+            <img src="${esc(optImg(c?.image))}">
+            <div style="flex:1;min-width:0;">
+              <div style="font-size:13px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(c?.nom||'Carte')} <span class="vente-rar ${ri.cls}" style="${ri.style||''}">${esc(ri.label)}</span></div>
+              <div class="vente-meta">${(parseFloat(l.a.prix)||0).toFixed(2)} € l'unité</div>
+            </div>
+            <button class="vente-qbtn" onclick="marketCartChange('${l.a.id}',-1)">−</button>
+            <span class="vente-qnum">${l.qty}</span>
+            <button class="vente-qbtn" onclick="marketCartChange('${l.a.id}',1)">＋</button>
+          </div>`;}).join('')}
+        <div style="display:flex;justify-content:space-between;font-weight:900;margin:6px 0;"><span>Total annoncé</span><span style="font-family:'Space Mono',monospace;">${total.toFixed(2)} €</span></div>
+        <label class="vente-meta" style="display:block;margin:6px 0 3px;">Ton offre pour le lot (€) — vide = prix annoncé</label>
+        <input id="mcOffer_${esc(seller)}" type="number" min="0" step="0.01" inputmode="decimal" placeholder="${total.toFixed(2)}" style="${inp}">
+        <input id="mcMsg_${esc(seller)}" type="text" maxlength="140" placeholder="Message (optionnel)" style="${inp}margin-top:6px;">
+        <button class="btn-primary" style="margin-top:8px;" onclick="marketSendOrder('${esc(seller)}')">📩 Envoyer la demande à ${esc(effectiveUserLabel(seller))}</button>
+      </div>`;}).join('')}
+    <button class="btn-secondary" onclick="closeMarketCart()">Fermer</button>
+  </div>`;
+}
+
+/* ── Envoi d'une demande ──────────────────────────────────────── */
+async function marketSendOrder(seller){
+  if(!currentUser) return;
+  await Promise.all([loadMarket(),loadMarketOrders()]);          // chiffres frais avant de réserver
+  const lines=marketCartLines().filter(l=>profileKey(l.a.seller_key)===seller);
+  if(!lines.length){ marketCartRender(); return; }
+  for(const l of lines){
+    if(l.a.statut!=='active' || marketAvailable(l.a)<l.qty){
+      showToast('⚠️ '+(l.card?.nom||'Une carte')+' n\'est plus disponible en quantité suffisante');
+      marketCartLines().forEach(x=>{ const mx=marketAvailable(x.a); if(x.qty>mx){ if(mx<=0) delete marketCart[x.a.id]; else marketCart[x.a.id]=mx; } });
+      marketCartSave(); marketCartRender(); return;
+    }
+  }
+  const items=lines.map(l=>{
+    const coll=collections.find(cc=>cc.id===l.card?.collection_id);
+    return {annonce_id:l.a.id,carte_id:String(l.a.carte_id),rarete:l.a.rarete,etat:l.a.etat||'',qty:l.qty,prix_unit:parseFloat(l.a.prix)||0,
+            nom:l.card?.nom||'',numero:l.card?.numero||'',coll:coll?.nom||''};
+  });
+  const total=items.reduce((s,i)=>s+i.prix_unit*i.qty,0);
+  const offerRaw=String(document.getElementById('mcOffer_'+seller)?.value||'').replace(',','.');
+  const offer=offerRaw!==''?parseFloat(offerRaw):total;
+  if(!(offer>=0)){ showToast('Offre invalide'); return; }
+  const msg=(document.getElementById('mcMsg_'+seller)?.value||'').trim();
+  const now=new Date().toISOString();
+  const row={buyer_key:marketMe(),seller_key:seller,items,total_annonces:total,prix_propose:offer,propose_par:'buyer',statut:'pending',
+             message:msg,historique:[{par:'buyer',prix:offer,msg,at:now}],created_at:now,updated_at:now};
+  try{
+    const res=await sbPost('ventes_commandes',row);
+    marketOrders.unshift(Array.isArray(res)&&res[0]?res[0]:row);
+    lines.forEach(l=>delete marketCart[l.a.id]);
+    marketCartSave();
+    const nb=items.reduce((s,i)=>s+i.qty,0);
+    await addAppNotification('vente_demande',currentUser,seller,'🛒 Nouvelle demande d\'achat',
+      `${effectiveUserLabel(currentUser)} veut ${nb} carte(s) pour ${offer.toFixed(2)} €${offer<total-0.004?' (offre)':''}`,{order_id:(res&&res[0]&&res[0].id)||''});
+    showToast('✅ Demande envoyée à '+effectiveUserLabel(seller));
+    closeMarketCart();
+    marketView='orders';
+    renderVente();
+  }catch(e){
+    showToast('❌ Envoi impossible : table ventes_commandes à créer dans Supabase ?');
+    console.warn(e);
+  }
+}
+
+/* ── Actions sur une commande ─────────────────────────────────── */
+function marketRoleIn(o){ return profileKey(o.buyer_key)===marketMe()?'buyer':'seller'; }
+function marketOther(o){ return marketRoleIn(o)==='buyer'?o.seller_key:o.buyer_key; }
+
+async function marketPatchOrder(o,fields,fromStatuts){
+  const q='?id=eq.'+encodeURIComponent(o.id)+'&statut=in.('+fromStatuts.join(',')+')';
+  const res=await sbPatch('ventes_commandes',q,{...fields,updated_at:new Date().toISOString()});
+  if(!Array.isArray(res)||!res.length){ showToast('⚠️ Cette demande a changé entre-temps. Actualisation…'); await loadMarketOrders(); renderMarketOrders(); return null; }
+  Object.assign(o,res[0]);
+  return o;
+}
+function marketHist(o,par,prix,msg){
+  return [...(Array.isArray(o.historique)?o.historique:[]),{par,prix,msg:msg||'',at:new Date().toISOString()}];
+}
+function marketOrderSummary(o){
+  return (o.items||[]).map(i=>`${i.qty} × ${i.nom||'Carte'}`).join(', ');
+}
+async function marketNotifyOrder(o,type,title,body){
+  try{ await addAppNotification(type,currentUser,marketOther(o),title,body,{order_id:o.id}); }catch(e){}
+}
+
+async function marketOrderAccept(id){
+  const o=marketOrders.find(x=>String(x.id)===String(id));
+  if(!o||o.statut!=='pending'||o.propose_par===marketRoleIn(o)) return;
+  await Promise.all([loadMarket(),loadMarketOrders()]);
+  const o2=marketOrders.find(x=>String(x.id)===String(id));
+  if(!o2||o2.statut!=='pending'){ renderMarketOrders(); return; }
+  for(const it of o2.items||[]){
+    const a=marketListings.find(x=>String(x.id)===String(it.annonce_id));
+    if(!a||a.statut!=='active'||marketAvailable(a,o2.id)<(parseInt(it.qty)||0)){
+      showToast('⚠️ '+(it.nom||'Une carte')+' n\'est plus disponible en quantité suffisante');
+      return;
+    }
+  }
+  try{
+    if(!await marketPatchOrder(o2,{statut:'accepted',historique:marketHist(o2,marketRoleIn(o2),o2.prix_propose,'Acceptée')},['pending'])) return;
+    await marketNotifyOrder(o2,'vente_acceptee','✅ Demande acceptée',`${effectiveUserLabel(currentUser)} a accepté : ${marketOrderSummary(o2)} pour ${(parseFloat(o2.prix_propose)||0).toFixed(2)} €. Les cartes te sont réservées.`);
+    showToast('✅ Acceptée — les cartes sont réservées');
+    renderVente();
+  }catch(e){ showToast('❌ '+e.message); }
+}
+async function marketOrderRefuse(id){
+  const o=marketOrders.find(x=>String(x.id)===String(id));
+  if(!o||o.statut!=='pending') return;
+  if(!confirm('Refuser cette demande ?')) return;
+  try{
+    if(!await marketPatchOrder(o,{statut:'refused',historique:marketHist(o,marketRoleIn(o),o.prix_propose,'Refusée')},['pending'])) return;
+    await marketNotifyOrder(o,'vente_refusee','❌ Demande refusée',`${effectiveUserLabel(currentUser)} a refusé : ${marketOrderSummary(o)}`);
+    renderVente();
+  }catch(e){ showToast('❌ '+e.message); }
+}
+async function marketOrderCancel(id){
+  const o=marketOrders.find(x=>String(x.id)===String(id));
+  if(!o||!MARKET_ORDER_OPEN.includes(o.statut)) return;
+  if(!confirm('Annuler cette demande ? Les cartes réservées seront libérées.')) return;
+  try{
+    if(!await marketPatchOrder(o,{statut:'cancelled',historique:marketHist(o,marketRoleIn(o),o.prix_propose,'Annulée')},['pending','accepted'])) return;
+    await marketNotifyOrder(o,'vente_annulee','Demande annulée',`${effectiveUserLabel(currentUser)} a annulé : ${marketOrderSummary(o)}`);
+    renderVente();
+  }catch(e){ showToast('❌ '+e.message); }
+}
+function marketAskPrice(title,def,cb){
+  document.getElementById('marketPriceOverlay')?.remove();
+  const ov=document.createElement('div');
+  ov.id='marketPriceOverlay';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:2147483001;display:flex;align-items:center;justify-content:center;padding:16px;';
+  ov.onclick=e=>{ if(e.target===ov) ov.remove(); };
+  const inp='width:100%;padding:11px 12px;border-radius:10px;border:1.5px solid var(--border);background:var(--bg);color:var(--text);font-size:15px;';
+  ov.innerHTML=`<div style="background:var(--bg2);width:100%;max-width:420px;border-radius:16px;padding:16px;">
+    <div style="font-weight:900;font-size:15px;margin-bottom:10px;">${esc(title)}</div>
+    <input id="mpPrice" type="number" min="0" step="0.01" inputmode="decimal" value="${def}" style="${inp}">
+    <input id="mpMsg" type="text" maxlength="140" placeholder="Message (optionnel)" style="${inp}margin-top:8px;">
+    <div style="display:flex;gap:8px;margin-top:12px;">
+      <button class="btn-secondary" style="flex:1;" onclick="document.getElementById('marketPriceOverlay').remove()">Annuler</button>
+      <button class="btn-primary" style="flex:2;" id="mpOk">Envoyer</button>
+    </div></div>`;
+  document.body.appendChild(ov);
+  document.getElementById('mpOk').onclick=()=>{
+    const p=parseFloat(String(document.getElementById('mpPrice').value).replace(',','.'));
+    const m=(document.getElementById('mpMsg').value||'').trim();
+    if(!(p>=0)){ showToast('Prix invalide'); return; }
+    ov.remove(); cb(p,m);
+  };
+  setTimeout(()=>document.getElementById('mpPrice')?.select(),50);
+}
+function marketOrderCounter(id){
+  const o=marketOrders.find(x=>String(x.id)===String(id));
+  if(!o||o.statut!=='pending'||o.propose_par===marketRoleIn(o)) return;
+  marketAskPrice('Ta contre-offre pour le lot (€)',(parseFloat(o.prix_propose)||0).toFixed(2),async(p,m)=>{
+    try{
+      const role=marketRoleIn(o);
+      if(!await marketPatchOrder(o,{prix_propose:p,propose_par:role,message:m,historique:marketHist(o,role,p,m)},['pending'])) return;
+      await marketNotifyOrder(o,'vente_offre','💬 Contre-offre',`${effectiveUserLabel(currentUser)} propose ${p.toFixed(2)} € pour : ${marketOrderSummary(o)}`);
+      showToast('✅ Contre-offre envoyée');
+      renderVente();
+    }catch(e){ showToast('❌ '+e.message); }
+  });
+}
+
+/* ── Vente conclue : retire chez le vendeur, ajoute chez l'acheteur ── */
+function marketDbKey(logical){
+  const k=profileKey(logical);
+  if(k==='anthony') return profileKey(ADMIN_EMAIL);
+  if(k==='valentin') return profileKey(VALENTIN_EMAIL);
+  return k;
+}
+async function marketGiveToBuyer(buyer,carteId,rarete,qty){
+  // Déjà dans sa collection → tout va dans ses doubles. Sinon : 1 exemplaire
+  // dans sa collection, le reste en doubles.
+  const dbKey=marketDbKey(buyer);
+  let mainQty=0, mainRow=null, mainOk=true;
+  try{
+    const rows=await sbGet('main_collection','?select=id,quantity&user_key=eq.'+encodeURIComponent(dbKey)+'&carte_id=eq.'+encodeURIComponent(carteId)+'&rarete=eq.'+encodeURIComponent(rarete));
+    mainRow=(rows||[])[0]||null;
+    mainQty=parseInt(mainRow?.quantity)||0;
+  }catch(e){ mainOk=false; }
+  let toDoubles=qty, toMain=0;
+  if(mainOk && mainQty<=0){
+    try{
+      const now=new Date().toISOString();
+      if(mainRow) await sbPatch('main_collection','?id=eq.'+encodeURIComponent(mainRow.id),{quantity:1,updated_at:now});
+      else await sbPost('main_collection',{carte_id:String(carteId),user_key:dbKey,rarete,quantity:1,updated_at:now});
+      toMain=1; toDoubles=qty-1;
+    }catch(e){ console.warn('main_collection acheteur',e); }
+  }
+  if(toDoubles>0) await changeQty(String(carteId),profileKey(buyer),rarete,toDoubles);
+  return {toMain,toDoubles};
+}
+async function marketOrderComplete(id){
+  const o=marketOrders.find(x=>String(x.id)===String(id));
+  if(!o||o.statut!=='accepted'||marketRoleIn(o)!=='seller') return;
+  if(!confirm('Confirmer la vente conclue ?\n\nLes cartes seront retirées de tes doubles et ajoutées au compte de '+effectiveUserLabel(o.buyer_key)+'.')) return;
+  try{
+    // On verrouille d'abord la commande (évite un double traitement)
+    if(!await marketPatchOrder(o,{statut:'completed',completed_at:new Date().toISOString(),historique:marketHist(o,'seller',o.prix_propose,'Vente conclue')},['accepted'])) return;
+    const seller=profileKey(o.seller_key), buyer=profileKey(o.buyer_key);
+    for(const it of o.items||[]){
+      const qty=parseInt(it.qty)||0;
+      if(qty<=0) continue;
+      // Annonce
+      const a=marketListings.find(x=>String(x.id)===String(it.annonce_id));
+      if(a){
+        const left=Math.max((parseInt(a.quantite)||0)-qty,0);
+        try{ await sbPatch('ventes_annonces','?id=eq.'+encodeURIComponent(a.id),left>0?{quantite:left,updated_at:new Date().toISOString()}:{quantite:0,statut:'sold',updated_at:new Date().toISOString()}); }catch(e){ console.warn(e); }
+        a.quantite=left; if(left<=0) a.statut='sold';
+      }
+      // Doubles du vendeur
+      await changeQty(String(it.carte_id),seller,it.rarete,-qty);
+      // Côté acheteur
+      await marketGiveToBuyer(buyer,it.carte_id,it.rarete,qty);
+    }
+    marketListings=marketListings.filter(x=>x.statut==='active' && (parseInt(x.quantite)||0)>0);
+    try{ await addHistory('vente',seller,buyer,`${marketOrderSummary(o)} pour ${(parseFloat(o.prix_propose)||0).toFixed(2)} €`); }catch(e){}
+    await marketNotifyOrder(o,'vente_conclue','🏁 Vente conclue',`${effectiveUserLabel(currentUser)} a conclu la vente : ${marketOrderSummary(o)}. Les cartes sont ajoutées à ton compte.`);
+    showToast('🏁 Vente conclue — stocks mis à jour');
+    renderVente();
+  }catch(e){ showToast('❌ '+e.message); }
+}
+
+/* ── Messagerie : discuter même sans être amis ────────────────── */
+function marketOpenChat(key){
+  const k=profileKey(key);
+  if(!k) return;
+  chatExtraPartners.add(k);
+  currentChatFriend=k;
+  switchTab('messages');
+}
+
+/* ── Écran « Demandes » ───────────────────────────────────────── */
+function marketOrderStatusLabel(o){
+  const role=marketRoleIn(o), other=effectiveUserLabel(marketOther(o));
+  if(o.statut==='pending') return o.propose_par!==role?'🔔 À traiter':'⏳ En attente de '+other;
+  return {accepted:'✅ Acceptée — cartes réservées',completed:'🏁 Vente conclue',refused:'❌ Refusée',cancelled:'Annulée'}[o.statut]||o.statut;
+}
+function marketOrderCardHtml(o){
+  const role=marketRoleIn(o);
+  const other=marketOther(o);
+  const myTurn=o.statut==='pending' && o.propose_par!==role;
+  const total=parseFloat(o.total_annonces)||0, prop=parseFloat(o.prix_propose)||0;
+  const lines=(o.items||[]).map(i=>{
+    const c=cartes.find(x=>String(x.id)===String(i.carte_id));
+    const ri=c?venteRarInfo(c,i.rarete):{label:i.rarete,cls:''};
+    return `<div class="vente-meta" style="white-space:normal;color:var(--text);margin:2px 0;">• ${i.qty} × <b>${esc(c?.nom||i.nom||'Carte')}</b> <span class="vente-rar ${ri.cls}" style="${ri.style||''}">${esc(ri.label)}</span> — ${(parseFloat(i.prix_unit)||0).toFixed(2)} €</div>`;
+  }).join('');
+  const hist=(Array.isArray(o.historique)?o.historique:[]).slice(-4).map(h=>
+    `<div class="vente-meta" style="white-space:normal;">${h.par==='buyer'?'Acheteur':'Vendeur'} : ${(parseFloat(h.prix)||0).toFixed(2)} €${h.msg?' — '+esc(h.msg):''}</div>`).join('');
+  let actions='';
+  if(myTurn){
+    actions=`<button class="market-btn primary" onclick="marketOrderAccept('${o.id}')">✅ Accepter</button>
+      <button class="market-btn" onclick="marketOrderCounter('${o.id}')">💬 Contre-offre</button>
+      <button class="market-btn danger" onclick="marketOrderRefuse('${o.id}')">Refuser</button>`;
+  }else if(o.statut==='pending'){
+    actions=`<button class="market-btn danger" onclick="marketOrderCancel('${o.id}')">Retirer ma demande</button>`;
+  }else if(o.statut==='accepted'){
+    actions=(role==='seller'?`<button class="market-btn primary" onclick="marketOrderComplete('${o.id}')">🏁 Vente conclue</button>`:'')+
+      `<button class="market-btn danger" onclick="marketOrderCancel('${o.id}')">Annuler</button>`;
+  }
+  actions+=`<button class="market-btn" onclick="marketOpenChat('${esc(profileKey(other))}')">💬 Discuter</button>`;
+  return `<div class="vente-card" style="display:block;${myTurn?'border-color:var(--accent2);':''}">
+    <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;">
+      <div class="market-seller" style="margin:0;">${effectiveUserAvatar(profileKey(other),20)} <b>${role==='buyer'?'Vendeur : ':'Acheteur : '}${esc(effectiveUserLabel(other))}</b></div>
+      <span class="vente-rar vente-rar-c" style="white-space:nowrap;">${esc(marketOrderStatusLabel(o))}</span>
+    </div>
+    <div style="margin:8px 0;">${lines}</div>
+    <div style="display:flex;justify-content:space-between;align-items:baseline;">
+      <span class="vente-price">${prop.toFixed(2)} €</span>
+      <span class="vente-meta">${Math.abs(prop-total)>0.004?'annoncé '+total.toFixed(2)+' € · ':''}proposé par ${o.propose_par===role?'toi':esc(effectiveUserLabel(other))}</span>
+    </div>
+    ${hist?`<div style="margin-top:6px;border-top:1px solid var(--border);padding-top:6px;">${hist}</div>`:''}
+    <div class="market-actions">${actions}</div>
+  </div>`;
+}
+function marketOrdersMine(){
+  const me=marketMe();
+  return marketOrders.filter(o=>profileKey(o.buyer_key)===me||profileKey(o.seller_key)===me);
+}
+function marketOrdersTodo(){
+  return marketOrdersMine().filter(o=>o.statut==='pending' && o.propose_par!==marketRoleIn(o)).length;
+}
+function renderMarketOrders(){
+  const box=document.getElementById('marketOrdersBox');
+  if(!box) return;
+  const mine=marketOrdersMine();
+  const todo=mine.filter(o=>o.statut==='pending'&&o.propose_par!==marketRoleIn(o));
+  const running=mine.filter(o=>MARKET_ORDER_OPEN.includes(o.statut)&&!todo.includes(o));
+  const done=mine.filter(o=>!MARKET_ORDER_OPEN.includes(o.statut)).slice(0,20);
+  const sec=(t,l)=>l.length?`<div class="section-title" style="font-size:14px;margin:12px 0 8px;">${t}</div><div class="vente-list">${l.map(marketOrderCardHtml).join('')}</div>`:'';
+  box.innerHTML=(mine.length?sec('🔔 À traiter',todo)+sec('⏳ En cours',running)+sec('🗂️ Terminées',done)
+    :'<div style="text-align:center;color:var(--text2);padding:30px;font-size:14px;">Aucune demande pour le moment.<br>Ajoute des cartes au panier depuis les annonces.</div>');
+}
+function marketSetView(v){ marketView=v; renderVente(); }
+
+/* Rafraîchissement régulier de l'onglet Vente (réservations, nouvelles demandes) */
+setInterval(async()=>{
+  if(activeTab!=='vente' || !marketLoaded || !marketAllowed()) return;
+  if(document.getElementById('marketFormOverlay')||document.getElementById('marketCartOverlay')||document.getElementById('marketPriceOverlay')) return;
+  const ae=document.activeElement;
+  if(ae && /INPUT|SELECT|TEXTAREA/.test(ae.tagName)) return;
+  try{ await Promise.all([loadMarket(),loadMarketOrders()]); }catch(e){ return; }
+  if(activeTab==='vente') renderVente();
+},30000);
+
+/* ── Partenaires de discussion hors amis (vendeurs / acheteurs) ── */
+let chatExtraPartners=new Set();
+let _chatPartnersAt=0;
+async function loadChatPartners(force){
+  if(!currentUser) return;
+  if(!force && Date.now()-_chatPartnersAt<20000) return;
+  _chatPartnersAt=Date.now();
+  const me=profileKey(currentUser);
+  try{
+    const [a,b]=await Promise.all([
+      sbGet('chat_messages','?select=receiver_key&sender_key=eq.'+encodeURIComponent(me)+'&order=created_at.desc&limit=300'),
+      sbGet('chat_messages','?select=sender_key&receiver_key=eq.'+encodeURIComponent(me)+'&order=created_at.desc&limit=300')
+    ]);
+    (a||[]).forEach(r=>{ const k=profileKey(r.receiver_key); if(k&&k!==me) chatExtraPartners.add(k); });
+    (b||[]).forEach(r=>{ const k=profileKey(r.sender_key); if(k&&k!==me) chatExtraPartners.add(k); });
+  }catch(e){}
+}
 
 tryRestoreAuth();
 
