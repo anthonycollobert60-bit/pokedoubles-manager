@@ -7753,6 +7753,15 @@ async function loadMarket(){
   marketLoaded=true;
 }
 
+// Quantité encore vendable = doubles possédés − exemplaires déjà en vente dans
+// MES autres annonces actives (même carte, même version). 99 si aucun double
+// n'est enregistré (on ne bloque pas dans ce cas).
+function marketQtyMax(carteId,rarete,excludeId){
+  const own=getQuantite(carteId,marketMe(),rarete);
+  if(own<=0) return 99;
+  const listed=marketListings.filter(x=>profileKey(x.seller_key)===marketMe() && String(x.carte_id)===String(carteId) && x.rarete===rarete && x.statut!=='removed' && String(x.id)!==String(excludeId||'')).reduce((n,x)=>n+(parseInt(x.quantite)||0),0);
+  return Math.max(own-listed,0);
+}
 function marketRarRank(c,rarete){
   if(cardExceedsSet(c)) return 11;
   if(cardIsSpecial(c)) return 10;
@@ -7937,8 +7946,17 @@ function marketFormRender(){
   if(!c){ marketForm.carteId=''; marketFormRenderSearch(); return; }
   const a=marketForm.annonce;
   const coll=collections.find(cc=>cc.id===c.collection_id);
-  const rarete=a?a.rarete:'c';
+  // Versions proposées : celles qui existent pour CETTE carte et que le vendeur
+  // possède en double. Sans aucun exemplaire, on propose les versions existantes.
+  const existing=TYPES.filter(t=>collectionHasRarete(c.id,t));
+  const ownedTypes=existing.filter(t=>getQuantite(c.id,marketMe(),t)>0);
+  let opts=ownedTypes.length?ownedTypes:existing;
+  if(a && !opts.includes(a.rarete)) opts=[...opts,a.rarete];
+  if(!opts.length) opts=['c'];
+  const rarete=(a&&opts.includes(a.rarete))?a.rarete:opts[0];
   const sugg=ventePrice(c.id,rarete);
+  const ownedNow=getQuantite(c.id,marketMe(),rarete);
+  const qtyMax=marketQtyMax(c.id,rarete,a?a.id:null);
   const prixVal=a?(parseFloat(a.prix)||''):(sugg>0?sugg.toFixed(2):'');
   const inp='width:100%;padding:11px 12px;border-radius:10px;border:1.5px solid var(--border);background:var(--bg);color:var(--text);font-size:14px;';
   const lbl='display:block;font-size:12px;font-weight:800;color:var(--text2);margin:10px 0 4px;';
@@ -7952,11 +7970,12 @@ function marketFormRender(){
       </div>
     </div>
     <label style="${lbl}">Rareté / version</label>
-    <select id="mfRarete" onchange="marketFormUpdateSugg()" style="${inp}">${TYPES.map(t=>`<option value="${t}"${t===rarete?' selected':''}>${esc(venteRarInfo(c,t).label)}</option>`).join('')}</select>
+    <select id="mfRarete" onchange="marketFormUpdateSugg()" style="${inp}">${opts.map(t=>`<option value="${t}"${t===rarete?' selected':''}>${esc(venteRarInfo(c,t).label)}</option>`).join('')}</select>
+    <div class="vente-meta" style="margin-top:4px;">${ownedTypes.length?'Seulement les versions que tu as en double.':'Tu n\'as pas cette carte en double : versions existantes affichées.'}</div>
     <label style="${lbl}">État</label>
     <select id="mfEtat" style="${inp}">${MARKET_ETATS.map(e=>`<option value="${e[0]}"${(a?a.etat:'excellent')===e[0]?' selected':''}>${e[1]}</option>`).join('')}</select>
     <div style="display:flex;gap:10px;">
-      <div style="flex:1;"><label style="${lbl}">Quantité</label><input id="mfQty" type="number" min="1" max="99" value="${a?(parseInt(a.quantite)||1):1}" style="${inp}"></div>
+      <div style="flex:1;"><label style="${lbl}">Quantité</label><input id="mfQty" type="number" min="1" max="${qtyMax}" onchange="if(+this.value>+this.max)this.value=Math.max(+this.max,1)" value="${a?(parseInt(a.quantite)||1):1}" style="${inp}"></div>
       <div style="flex:1;"><label style="${lbl}">Prix (€)</label><input id="mfPrix" type="number" min="0" step="0.01" inputmode="decimal" oninput="this.dataset.touched=1" value="${prixVal}" placeholder="0.00" style="${inp}"></div>
     </div>
     <div id="mfSugg" class="vente-meta" style="margin-top:4px;">${sugg>0?`Prix conseillé (CardMarket) : <b>${sugg.toFixed(2)} €</b> — tu fixes le prix que tu veux.`:'Pas de cote connue pour cette carte.'}</div>
@@ -7977,6 +7996,11 @@ function marketFormUpdateSugg(){
   const s=ventePrice(marketForm.carteId,r);
   const el=document.getElementById('mfSugg');
   if(el) el.innerHTML=s>0?`Prix conseillé (CardMarket) : <b>${s.toFixed(2)} €</b> — tu fixes le prix que tu veux.`:'Pas de cote connue pour cette version.';
+  const q=document.getElementById('mfQty');
+  if(q){
+    const mx=marketQtyMax(marketForm.carteId,r,marketForm.annonce?marketForm.annonce.id:null);
+    q.max=mx; if((parseInt(q.value)||1)>mx) q.value=Math.max(mx,1);
+  }
   const p=document.getElementById('mfPrix');
   if(p && s>0 && !marketForm.annonce && !p.dataset.touched) p.value=s.toFixed(2);
 }
@@ -8021,6 +8045,11 @@ async function marketFormSubmit(){
   const com=(document.getElementById('mfCom').value||'').trim();
   const vis=document.getElementById('mfVis').value==='friends'?'friends':'public';
   if(!(qty>=1)){ showToast('Quantité invalide'); return; }
+  const qmax=marketQtyMax(c.id,rarete,a?a.id:null);
+  if(qty>qmax){
+    showToast(qmax<=0?'Tous tes exemplaires de cette version sont déjà en vente':'Tu n\'en as que '+qmax+' de disponible(s) (les autres sont déjà en vente)');
+    return;
+  }
   if(!(prix>=0)){ showToast('Indique un prix'); return; }
   const now=new Date().toISOString();
   const a=marketForm.annonce;
