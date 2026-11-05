@@ -2104,6 +2104,7 @@ async function doSignup(){
   }catch(e){ showLoginError('Inscription impossible : '+e.message); }
 }
 function loginAsVisitor(){
+  if(!marketAllowed()){ showToast('🛒 Vente : bientôt disponible'); return; }
   clearAuthSession();
   currentUser=null; selectedUser='visitor'; currentAuthEmail='';
   enterApp();
@@ -2256,6 +2257,8 @@ function updateCurrentTabLabel(tab){
 
 function switchTab(tab){
   closeNotificationCenter();
+  // Onglet Vente en test : « bientôt disponible » pour tout le monde sauf Anthony
+  if(tab==='vente' && !marketAllowed()){ closeAppMenu(); showToast('🛒 Vente : bientôt disponible'); return; }
 
   if(tab==='messages') currentChatFriend='';
   if(!currentUser && tab!=='vente') tab='vente';
@@ -3262,7 +3265,7 @@ function fillModal(carteId){
       actionBar.style.cssText='display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin:8px 0;';
       modalPriceEl.parentNode.insertBefore(actionBar, modalPriceEl);
     }
-    actionBar.innerHTML=`${currentUser?`<button class="btn-sm" onclick="openMarketForm('${carteId}')">🏷️ Mettre en vente</button>`:''}${currentUser?`<button class="btn-sm" onclick="shareCurrentCardToChat('${carteId}')">💬 Montrer à un ami</button>`:''}`;
+    actionBar.innerHTML=`${(currentUser&&marketAllowed())?`<button class="btn-sm" onclick="openMarketForm('${carteId}')">🏷️ Mettre en vente</button>`:''}${currentUser?`<button class="btn-sm" onclick="shareCurrentCardToChat('${carteId}')">💬 Montrer à un ami</button>`:''}`;
   }
 
   // Prix CardMarket (ou prix manuel s'il existe). Bouton de correction côté Anthony.
@@ -7720,6 +7723,11 @@ function doGlobalSearch(){
    seulement consulter. Les cartes "recherchées" (card_wishlist, partagée
    avec l'app collection) déclenchent une notification quand un vendeur met
    en vente la carte (voir marketNotifyWishers). */
+// Phase de test : seul MARKET_BETA_OWNER accède à l'onglet Vente. Pour ouvrir à
+// tout le monde, passer MARKET_BETA à false.
+const MARKET_BETA=true;
+const MARKET_BETA_OWNER='anthony';
+function marketAllowed(){ return !MARKET_BETA || (!!currentUser && profileKey(currentUser)===MARKET_BETA_OWNER); }
 const MARKET_ETATS=[['neuf','Neuf'],['excellent','Excellent'],['bon','Bon'],['joue','Joué'],['abime','Abîmé']];
 function marketEtatLabel(k){ const f=MARKET_ETATS.find(e=>e[0]===k); return f?f[1]:''; }
 
@@ -7761,6 +7769,16 @@ function marketQtyMax(carteId,rarete,excludeId){
   if(own<=0) return 99;
   const listed=marketListings.filter(x=>profileKey(x.seller_key)===marketMe() && String(x.carte_id)===String(carteId) && x.rarete===rarete && x.statut!=='removed' && String(x.id)!==String(excludeId||'')).reduce((n,x)=>n+(parseInt(x.quantite)||0),0);
   return Math.max(own-listed,0);
+}
+function marketFindMine(carteId,rarete,excludeId){
+  return marketListings.find(x=>profileKey(x.seller_key)===marketMe() && String(x.carte_id)===String(carteId) && x.rarete===rarete && x.statut!=='removed' && String(x.id)!==String(excludeId||''))||null;
+}
+function marketFormMergeNote(){
+  const el=document.getElementById('mfMerge');
+  if(!el||!marketForm||marketForm.annonce) return;
+  const r=document.getElementById('mfRarete')?.value||'c';
+  const ex=marketFindMine(marketForm.carteId,r);
+  el.innerHTML=ex?`🔗 Tu as déjà ${parseInt(ex.quantite)||0} en vente à ${(parseFloat(ex.prix)||0).toFixed(2)} € : la quantité sera ajoutée à cette annonce (prix et état inchangés).`:'';
 }
 function marketRarRank(c,rarete){
   if(cardExceedsSet(c)) return 11;
@@ -7918,6 +7936,7 @@ function marketSetScope(s){ marketScope=s; renderVente(); }
 
 /* ── Mise en vente / modification ─────────────────────────────── */
 function openMarketForm(carteId, annonceId){
+  if(!marketAllowed()){ showToast('🛒 Vente : bientôt disponible'); return; }
   if(!currentUser){ showToast('Connecte-toi pour vendre une carte'); return; }
   const annonce=annonceId?marketListings.find(a=>String(a.id)===String(annonceId)):null;
   marketForm={carteId:carteId?String(carteId):'', annonce:annonce||null, q:''};
@@ -7979,6 +7998,7 @@ function marketFormRender(){
       <div style="flex:1;"><label style="${lbl}">Prix (€)</label><input id="mfPrix" type="number" min="0" step="0.01" inputmode="decimal" oninput="this.dataset.touched=1" value="${prixVal}" placeholder="0.00" style="${inp}"></div>
     </div>
     <div id="mfSugg" class="vente-meta" style="margin-top:4px;">${sugg>0?`Prix conseillé (CardMarket) : <b>${sugg.toFixed(2)} €</b> — tu fixes le prix que tu veux.`:'Pas de cote connue pour cette carte.'}</div>
+    <div id="mfMerge" class="vente-meta" style="margin-top:6px;color:var(--accent2);font-weight:700;"></div>
     <label style="${lbl}">Commentaire (optionnel)</label>
     <input id="mfCom" type="text" maxlength="140" value="${esc(a?.commentaire||'')}" placeholder="Ex : remise en main propre, échange possible…" style="${inp}">
     <label style="${lbl}">Visible par</label>
@@ -7990,9 +8010,11 @@ function marketFormRender(){
       <button class="btn-secondary" style="flex:1;" onclick="closeMarketForm()">Annuler</button>
       <button class="btn-primary" style="flex:2;" onclick="marketFormSubmit()">${a?'Enregistrer':'Mettre en vente'}</button>
     </div>`);
+  marketFormMergeNote();
 }
 function marketFormUpdateSugg(){
   const r=document.getElementById('mfRarete')?.value||'c';
+  marketFormMergeNote();
   const s=ventePrice(marketForm.carteId,r);
   const el=document.getElementById('mfSugg');
   if(el) el.innerHTML=s>0?`Prix conseillé (CardMarket) : <b>${s.toFixed(2)} €</b> — tu fixes le prix que tu veux.`:'Pas de cote connue pour cette version.';
@@ -8058,6 +8080,12 @@ async function marketFormSubmit(){
       await sbPatch('ventes_annonces','?id=eq.'+encodeURIComponent(a.id),{rarete,etat,quantite:qty,prix,commentaire:com,visibilite:vis,updated_at:now});
       Object.assign(a,{rarete,etat,quantite:qty,prix,commentaire:com,visibilite:vis});
       showToast('✅ Annonce modifiée');
+    }else if(marketFindMine(c.id,rarete)){
+      const ex=marketFindMine(c.id,rarete);
+      const nq=(parseInt(ex.quantite)||0)+qty;
+      await sbPatch('ventes_annonces','?id=eq.'+encodeURIComponent(ex.id),{quantite:nq,updated_at:now});
+      ex.quantite=nq;
+      showToast('✅ +'+qty+' ajouté à ton annonce existante ('+nq+' au total)');
     }else{
       const row={seller_key:marketMe(),carte_id:String(c.id),rarete,etat,quantite:qty,prix,commentaire:com,visibilite:vis,statut:'active',created_at:now,updated_at:now};
       const res=await sbPost('ventes_annonces',row);
@@ -8085,6 +8113,7 @@ async function marketNotifyWishers(a,card){
   (rows||[]).forEach(r=>{
     const u=profileKey(r.user_key);
     if(!u || u===me) return;
+    if(MARKET_BETA && u!==MARKET_BETA_OWNER) return;               // test : pas de notif à ceux qui n'ont pas accès
     if(r.rarete && r.rarete!==a.rarete) return;                 // il cherche une autre version
     if(a.visibilite==='friends' && !friends.has(u)) return;      // annonce réservée aux amis du vendeur
     targets.add(u);
