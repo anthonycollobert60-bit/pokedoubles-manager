@@ -596,6 +596,10 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--text);heig
 }
 
 
+
+/* Gentle Mates : le reverse avait la même couleur que Peu Commune (vert) -> turquoise */
+html[data-game-theme="gentlemates"]{--c-r:#0891b2}
+html[data-game-theme="gentlemates"] .badge-r{background:#0891b2}
 /* ── REPORTS BUGS / AMÉLIORATIONS ───────────────────── */
 .report-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-xl);padding:18px;margin-bottom:14px;box-shadow:0 12px 30px var(--shadow)}
 .report-form{display:flex;flex-direction:column;gap:12px}
@@ -1155,8 +1159,12 @@ function cardRareteBadge(card){
   if(card.game_id==='gentlemates') return gentleMatesRareteBadgeInfo(card.rarete_affichee);
   return rareteBadgeInfo(card.rarete_tcgdex);
 }
+// Gentle Mates : la rareté « Autre » désigne les cartes Essence.
+function rareteOfficielleLabel(r, game){
+  return (game==='gentlemates' && String(r||'').trim().toLowerCase()==='autre') ? 'Essence' : r;
+}
 function rareteDisplayLabel(card, t){
-  if(t==='c' && card && card.rarete_affichee) return card.rarete_affichee;
+  if(t==='c' && card && card.rarete_affichee) return rareteOfficielleLabel(card.rarete_affichee, card.game_id);
   if(t==='c' && card && card.rarete_tcgdex && card.rarete_tcgdex!=='Inconnue') return card.rarete_tcgdex;
   return TYPE_LABELS[t] || String(t).toUpperCase();
 }
@@ -3031,7 +3039,7 @@ function updateTypeFilterOptions(cards){
     select.innerHTML='<option value="all">Toutes les cartes</option>'
       +raretesOfficielles.map(r=>{
         const info=(currentGame==='pokemon')?rareteBadgeInfo(r):null;
-        const label=(info?info.symbol+' ':'')+r;
+        const label=(info?info.symbol+' ':'')+rareteOfficielleLabel(r,currentGame);
         return '<option value="rarete:'+esc(r.toLowerCase())+'">'+esc(label)+'</option>';
       }).join('');
   } else {
@@ -6012,7 +6020,7 @@ function venteRarInfo(carte, rarete){
   if(rarete==='c'){
     const info=cardRareteBadge(carte);
     if(info){
-      const label=(carte.game_id==='gentlemates')?carte.rarete_affichee:carte.rarete_tcgdex;
+      const label=(carte.game_id==='gentlemates')?rareteOfficielleLabel(carte.rarete_affichee,carte.game_id):carte.rarete_tcgdex;
       return { label:info.symbol+' '+label, cls:'vente-rar-c', style:'background:'+info.bg+';color:'+info.fg+';' };
     }
     if(cardExceedsSet(carte)) return { label:'Secrète', cls:'vente-rar-s' };
