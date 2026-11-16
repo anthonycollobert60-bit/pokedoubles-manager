@@ -3501,8 +3501,15 @@ function collectionHasRarete(carteId, rarete){
   // Donnée TCGdex fiable, quand on l'a : un print reverse existe ou non pour
   // CETTE carte précise. Sinon (bloc pas encore mis à jour), on garde l'ancienne
   // estimation par numéro (cartes secrètes/spéciales) comme repli.
-  if(carte.a_reverse===false) return false;
-  if(carte.a_reverse!==true && (cardExceedsSet(carte) || cardIsSpecial(carte))) return false;
+  let aRev=carte.a_reverse;
+  if(aRev===false){
+    // Série très récente : TCGdex n'a souvent pas encore les variantes -> on ne se fie pas au "false".
+    const rd=coll.release_date||coll.releaseDate||coll.date_sortie||'';
+    const t=Date.parse(String(rd).replace(/^(\d{2})\/(\d{2})\/(\d{4})$/,'$3-$2-$1'));
+    if(!isNaN(t) && (Date.now()-t)<1000*60*60*24*240) aRev=null;
+  }
+  if(aRev===false) return false;
+  if(aRev!==true && (cardExceedsSet(carte) || cardIsSpecial(carte))) return false;
   if(rarete==='r') return true;
   if(rarete==='p') return coll.has_pokeball===true;
   if(rarete==='m') return coll.has_masterball===true;
@@ -5549,7 +5556,7 @@ async function fetchTcgdexCardInfoOnce(base, tcgdexId, attempt){
     return {
       energie: Array.isArray(data?.types) ? data.types.join(',') : '',
       rarete: data?.rarity || '',
-      aReverse: !!(data?.variants && data.variants.reverse)
+      aReverse: (data?.variants && data.variants.reverse) ? true : ((data?.variants && Object.values(data.variants).some(v=>v===true)) ? false : null)
     };
   }catch(e){
     if(attempt<2){
@@ -5629,7 +5636,7 @@ async function backfillEnergieCards(target, label){
       // Clé composite : on ne regroupe que les cartes ayant EXACTEMENT la
       // même combinaison des trois valeurs, pour patcher plusieurs cartes
       // en une seule requête au lieu d'une par carte.
-      const key=energie+'|'+rarete+'|'+(info.aReverse?1:0);
+      const key=energie+'|'+rarete+'|'+(info.aReverse===null?'n':(info.aReverse?1:0));
       (groups[key]=groups[key]||{energie,rarete,aReverse:info.aReverse,list:[]}).list.push(c);
     });
     for(const key of Object.keys(groups)){
