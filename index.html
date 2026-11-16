@@ -644,6 +644,12 @@ body{font-family:'Nunito',sans-serif;background:var(--bg);color:var(--text);heig
 .friend-picker-item:active{transform:scale(.99)}
 
 
+
+.report-filter-row{display:flex;gap:6px;overflow-x:auto;padding:2px 0 12px;margin:0 -2px;-webkit-overflow-scrolling:touch}
+.report-filter-chip{flex:0 0 auto;padding:8px 12px;border-radius:999px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-family:inherit;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap}
+.report-filter-chip b{margin-left:4px;opacity:.7}
+.report-filter-chip.active{background:linear-gradient(135deg,var(--accent),var(--accent-dark));color:#fff;border-color:transparent}
+.report-filter-chip.active b{opacity:.95}
 /* ── REPORTS V2 + MISES À JOUR ─────────────────────── */
 .report-steps{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:12px 0}
 .report-step{font-size:10px;font-weight:900;text-align:center;padding:7px 4px;border-radius:999px;border:1px solid var(--border);background:var(--surface2);color:var(--text2)}
@@ -2504,7 +2510,30 @@ async function renderReports(){
   `;
 
   await loadReports();
+  drawReportsList();
+}
 
+// Filtre de l'affichage des reports (Anthony) : all = tout sauf archivés, sent/open/progress/closed, archived.
+window.reportFilter=window.reportFilter||'all';
+function reportIsArchived(r){ return !!(r.extra&&r.extra.archived_by_admin); }
+function setReportFilter(v){ window.reportFilter=v; drawReportsList(); }
+window.setReportFilter=setReportFilter;
+async function archiveReport(reportId, archive){
+  if(profileKey(currentUser)!=='anthony'){ showToast('Action réservée à Anthony'); return; }
+  const report=appReports.find(r=>String(r.id)===String(reportId));
+  if(!report){ showToast('Report introuvable'); return; }
+  const extra={...(report.extra||{})};
+  if(archive) extra.archived_by_admin=true; else delete extra.archived_by_admin;
+  try{
+    await sbPatch('app_notifications','?id=eq.'+encodeURIComponent(reportId),{extra, read_at: report.read_at || null});
+    report.extra=extra;
+    showToast(archive?'🗄️ Report archivé (masqué pour toi uniquement)':'↩️ Report remis dans la liste');
+    drawReportsList();
+  }catch(e){ console.error(e); showToast('Action impossible'); }
+}
+window.archiveReport=archiveReport;
+
+function drawReportsList(){
   const list=document.getElementById('reportsList');
   if(!list) return;
   if(!appReports.length){
@@ -2513,8 +2542,23 @@ async function renderReports(){
   }
 
   const isAdmin=profileKey(currentUser)==='anthony';
+  let shown=appReports;
+  let filterHtml='';
+  if(isAdmin){
+    const active=appReports.filter(r=>!reportIsArchived(r));
+    const st=r=>(r.extra&&r.extra.status)||'sent';
+    const cnt={all:active.length,sent:active.filter(r=>st(r)==='sent').length,open:active.filter(r=>st(r)==='open').length,progress:active.filter(r=>st(r)==='progress').length,closed:active.filter(r=>st(r)==='closed').length,archived:appReports.length-active.length};
+    const F=[['all','Tous'],['sent','📨 Envoyés'],['open','🚨 Ouverts'],['progress','🟡 En cours'],['closed','✅ Clôturés'],['archived','🗄️ Archivés']];
+    const cur=F.some(x=>x[0]===window.reportFilter)?window.reportFilter:'all';
+    filterHtml='<div class="report-filter-row">'+F.map(x=>`<button type="button" class="report-filter-chip ${cur===x[0]?'active':''}" onclick="setReportFilter('${x[0]}')">${x[1]} <b>${cnt[x[0]]}</b></button>`).join('')+'</div>';
+    shown = cur==='archived' ? appReports.filter(reportIsArchived) : (cur==='all' ? active : active.filter(r=>st(r)===cur));
+    if(!shown.length){
+      list.innerHTML=filterHtml+'<div class="empty-state"><h3>Aucun report ici</h3><p>Change de filtre pour voir les autres.</p></div>';
+      return;
+    }
+  }
 
-  list.innerHTML=appReports.map(r=>{
+  list.innerHTML=filterHtml+shown.map(r=>{
     const extra=r.extra||{};
     const status=extra.status || 'sent';
     const theme=reportThemeLabel(extra.theme||'autre');
@@ -2552,7 +2596,7 @@ async function renderReports(){
             <button class="report-status-btn ${status==='sent'?'active':''}" onclick="updateReportStatus('${esc(String(r.id))}','sent')">📨 Envoyé</button>
             <button class="report-status-btn ${status==='open'?'active':''}" onclick="updateReportStatus('${esc(String(r.id))}','open')">🚨 Ouvert</button>
             <button class="report-status-btn ${status==='progress'?'active':''}" onclick="updateReportStatus('${esc(String(r.id))}','progress')">🟡 En cours</button>
-            <button class="report-status-btn" style="margin-left:auto;color:#ef4444;border-color:#ef4444" onclick="deleteReport('${esc(String(r.id))}')">🗑️ Supprimer</button>
+            <button class="report-status-btn" style="margin-left:auto;color:#ef4444;border-color:#ef4444" onclick="deleteReport('${esc(String(r.id))}')">🗑️ Supprimer partout</button>
           </div>
           <div class="report-close-box">
             <label class="report-label">Phrase de clôture
@@ -2560,6 +2604,9 @@ async function renderReports(){
             </label>
             <button class="btn-primary" onclick="updateReportStatus('${esc(String(r.id))}','closed')">✅ Clôturer</button>
           </div>
+          ${reportIsArchived(r)
+            ? `<button class="btn-secondary" style="margin-top:8px;width:100%" onclick="archiveReport('${esc(String(r.id))}',false)">↩️ Remettre dans la liste</button>`
+            : (status==='closed' ? `<button class="btn-secondary" style="margin-top:8px;width:100%" onclick="archiveReport('${esc(String(r.id))}',true)">🗄️ Archiver (masquer pour moi)</button>` : '')}
         ` : ''}
       </div>
     `;
